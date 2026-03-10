@@ -1,0 +1,79 @@
+@import "tailwindcss";
+
+/* Custom styles for the Nipah Awareness Platform */
+
+:root {
+  --color-primary: #6366f1;
+  --color-danger: #ef4444;
+  --color-warning: #f59e0b;
+  --color-success: #22c55e;
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #4b5563;
+  border-radius: 3px;
+}
+
+/* Avatar pulse animation */
+@keyframes avatar-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.02); }
+}
+.avatar-speaking {
+  animation: avatar-pulse 0.8s ease-in-out infinite;
+}
+
+/* Voice wave animation */
+@keyframes voice-wave {
+  0%, 100% { height: 8px; }
+  50% { height: 24px; }
+}
+.voice-bar {
+  animation: voice-wave 0.6s ease-in-out infinite;
+}
+.voice-bar:nth-child(2) { animation-delay: 0.1s; }
+.voice-bar:nth-child(3) { animation-delay: 0.2s; }
+.voice-bar:nth-child(4) { animation-delay: 0.3s; }
+.voice-bar:nth-child(5) { animation-delay: 0.15s; }
+
+/* Risk level colors */
+.risk-safe { color: #22c55e; border-color: #22c55e; }
+.risk-low { color: #f59e0b; border-color: #f59e0b; }
+.risk-high { color: #ef4444; border-color: #ef4444; }
+.risk-negative { color: #22c55e; border-color: #22c55e; }
+
+/* Chat messages */
+.chat-message {
+  max-width: 85%;
+}
+.chat-message p {
+  margin-bottom: 0.5rem;
+}
+.chat-message p:last-child {
+  margin-bottom: 0;
+}
+.chat-message strong {
+  color: #c4b5fd;
+}
+.chat-message ul, .chat-message ol {
+  padding-left: 1.25rem;
+  margin: 0.5rem 0;
+}
+.chat-message li {
+  margin-bottom: 0.25rem;
+}
+
