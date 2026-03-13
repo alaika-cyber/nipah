@@ -19,12 +19,27 @@ AI-powered health education and risk assessment platform for Nipah virus awarene
 - Random Forest classifier trained on Nipah-relevant blood markers
 - Outputs: Negative / Low Risk / High Risk with probability scores
 - Visual parameter analysis with normal range indicators
+- Fully local ML inference (does not call GPT/LLM APIs)
 
 ### Module 3: Symptom-Based Risk Assessment
 - Select symptoms from categorized checklist (neurological, respiratory, general, exposure)
 - Weighted scoring algorithm based on clinical literature
 - Outputs: Safe / Low Risk / High Risk with recommendations
 - Combination bonuses for clinically significant symptom patterns
+- Fully local rule engine (does not call GPT/LLM APIs)
+
+### Module 4: Hospital Discovery and Appointment Booking
+- Admin can register hospitals and manager credentials
+- Hospital manager can register doctors and weekly availability schedules
+- Patients can discover hospitals by city or nearby location (with map view)
+- Patients can select doctor, date, available slot, and book appointment
+- Managers can view booked appointments for their hospital
+
+### Module 5: Admin Dashboard and Red Zone Monitoring
+- Admin updates state-wise active cases and deaths
+- System computes Red / Orange / Green zones from severity
+- Public users can view read-only zone summary, state table, and charts
+- Data is stored in SQLite and reflected dynamically on refresh
 
 ---
 
@@ -35,8 +50,9 @@ AI-powered health education and risk assessment platform for Nipah virus awarene
 | Frontend | React 19 + TypeScript + Tailwind CSS 4 + Vite |
 | Backend | Python FastAPI |
 | ML Model | scikit-learn Random Forest |
+| Database | SQLite |
 | Speech | Web Speech API (browser-native) |
-| LLM | OpenAI API (optional, built-in fallback) |
+| LLM | OpenAI API for chat module only (optional, built-in fallback) |
 | Deployment | Docker + Docker Compose + Nginx |
 
 ---
@@ -56,7 +72,7 @@ pip install -r requirements.txt
 
 # Optional: Set up OpenAI API for enhanced chatbot
 cp .env.example .env
-# Edit .env and add your OPENAI_API_KEY
+# Edit .env and add your OPENAI_API_KEY (chat only)
 
 # Start the server
 uvicorn main:app --reload --port 8000
@@ -79,6 +95,8 @@ export OPENAI_API_KEY=your-key-here
 docker compose up --build
 ```
 
+SQLite data is stored in `backend/data/nipah.db` for local runs and persisted in the Docker volume `nipah_data` for container runs.
+
 Open http://localhost in your browser.
 
 ---
@@ -93,6 +111,16 @@ Open http://localhost in your browser.
 | GET | `/api/v1/blood-risk/parameters` | Get parameter info & normal ranges |
 | POST | `/api/v1/symptom-risk/assess` | Assess risk from symptoms |
 | GET | `/api/v1/symptom-risk/symptoms` | Get symptom catalog |
+| POST | `/api/v1/hospital-booking/admin/hospitals` | Admin adds hospital |
+| POST | `/api/v1/hospital-booking/manager/doctors` | Manager adds doctor |
+| GET | `/api/v1/hospital-booking/hospitals` | List/filter hospitals |
+| GET | `/api/v1/hospital-booking/hospitals/{hospital_id}/doctors` | List doctors by hospital |
+| GET | `/api/v1/hospital-booking/doctors/{doctor_id}/slots?date=YYYY-MM-DD` | Get available slots |
+| POST | `/api/v1/hospital-booking/appointments` | Book appointment |
+| GET | `/api/v1/hospital-booking/manager/appointments?manager_username=...` | Manager appointments |
+| POST | `/api/v1/admin-dashboard/admin/state-stats` | Admin upsert state stats |
+| GET | `/api/v1/admin-dashboard/state-stats` | Public state data |
+| GET | `/api/v1/admin-dashboard/zone-summary` | Public zone summary |
 
 ---
 
@@ -113,7 +141,8 @@ nipah/
 │   │   ├── blood_model.py       # ML model training & inference
 │   │   └── symptom_engine.py    # Rule-based symptom assessment
 │   └── services/
-│       └── llm_service.py       # LLM integration & knowledge base
+│       ├── llm_service.py       # Chat-only LLM integration & knowledge base
+│       └── database_service.py  # SQLite persistence layer
 ├── frontend/
 │   ├── src/
 │   │   ├── App.tsx              # Main app with tab navigation

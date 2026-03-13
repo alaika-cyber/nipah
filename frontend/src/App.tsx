@@ -1,10 +1,12 @@
 import { useState } from 'react';
-import { MessageCircle, Droplets, ClipboardList, AlertTriangle } from 'lucide-react';
+import { MessageCircle, Droplets, ClipboardList, AlertTriangle, Hospital, ShieldAlert } from 'lucide-react';
 import ChatBot from './components/ChatBot';
 import BloodRisk from './components/BloodRisk';
 import SymptomRisk from './components/SymptomRisk';
+import HospitalBooking from './components/HospitalBooking';
+import AdminDashboard from './components/AdminDashboard';
 
-type Tab = 'chatbot' | 'blood' | 'symptoms';
+type Tab = 'chatbot' | 'blood' | 'symptoms' | 'hospital' | 'dashboard';
 
 const TABS: { id: Tab; label: string; icon: React.ReactNode; description: string }[] = [
   {
@@ -24,6 +26,18 @@ const TABS: { id: Tab; label: string; icon: React.ReactNode; description: string
     label: 'Symptom Check',
     icon: <ClipboardList size={20} />,
     description: 'Rule-based symptom assessment',
+  },
+  {
+    id: 'hospital',
+    label: 'Hospitals & Booking',
+    icon: <Hospital size={20} />,
+    description: 'Find hospitals and book appointments',
+  },
+  {
+    id: 'dashboard',
+    label: 'Admin Monitoring',
+    icon: <ShieldAlert size={20} />,
+    description: 'State-wise zones and outbreak stats',
   },
 ];
 
@@ -91,6 +105,8 @@ function App() {
         {activeTab === 'chatbot' && <ChatBot />}
         {activeTab === 'blood' && <BloodRisk />}
         {activeTab === 'symptoms' && <SymptomRisk />}
+        {activeTab === 'hospital' && <HospitalBooking />}
+        {activeTab === 'dashboard' && <AdminDashboard />}
       </main>
 
       {/* Footer */}

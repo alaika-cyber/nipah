@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 from config import settings
 from models.blood_model import load_model, predict_risk, train_and_save_model, FEATURE_NAMES
+from services.database_service import save_blood_assessment
 
 import os
 
@@ -69,10 +70,22 @@ async def predict_blood_risk(params: BloodParameters):
         raise HTTPException(status_code=503, detail="ML model is not available")
 
     result = predict_risk(model, params.model_dump())
+    param_dict = params.model_dump()
+
+    try:
+        save_blood_assessment(
+            db_path=settings.SQLITE_DB_PATH,
+            input_parameters=param_dict,
+            prediction=result["prediction"],
+            risk_level=result["risk_level"],
+            probabilities=result["probabilities"],
+        )
+    except Exception:
+        # Persistence should not block risk assessment responses.
+        pass
 
     # Build parameter analysis
     analysis = []
-    param_dict = params.model_dump()
     for name in FEATURE_NAMES:
         nr = NORMAL_RANGES[name]
         val = param_dict[name]

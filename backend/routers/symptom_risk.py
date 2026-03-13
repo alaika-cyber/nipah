@@ -3,7 +3,9 @@
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
+from config import settings
 from models.symptom_engine import assess_symptoms, get_symptom_catalog
+from services.database_service import save_symptom_assessment
 
 router = APIRouter()
 
@@ -21,7 +23,19 @@ class SymptomRequest(BaseModel):
 async def assess_risk(request: SymptomRequest):
     """Assess Nipah virus risk based on reported symptoms."""
     result = assess_symptoms(request.symptoms)
-    return result.model_dump()
+    result_data = result.model_dump()
+
+    try:
+        save_symptom_assessment(
+            db_path=settings.SQLITE_DB_PATH,
+            selected_symptoms=request.symptoms,
+            result=result_data,
+        )
+    except Exception:
+        # Persistence should not block risk assessment responses.
+        pass
+
+    return result_data
 
 
 @router.get("/symptoms")

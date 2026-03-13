@@ -23,5 +23,16 @@ class Settings:
         "ML_MODEL_PATH", os.path.join(os.path.dirname(__file__), "models", "blood_model.joblib")
     )
 
+    # SQLite database path
+    SQLITE_DB_PATH: str = os.getenv(
+        "SQLITE_DB_PATH", os.path.join(os.path.dirname(__file__), "data", "nipah.db")
+    )
+
+    # Default admin/manager credentials
+    DEFAULT_ADMIN_EMAIL: str = os.getenv("DEFAULT_ADMIN_EMAIL", "admin@nipah.local")
+    DEFAULT_ADMIN_PASSWORD: str = os.getenv("DEFAULT_ADMIN_PASSWORD", "admin123")
+    DEFAULT_MANAGER_EMAIL: str = os.getenv("DEFAULT_MANAGER_EMAIL", "manager@nipah.local")
+    DEFAULT_MANAGER_PASSWORD: str = os.getenv("DEFAULT_MANAGER_PASSWORD", "manager123")
+
 
 settings = Settings()

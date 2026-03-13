@@ -14,6 +14,7 @@ export default function ChatBot() {
   const {
     isListening,
     isSpeaking,
+    mouthOpen,
     transcript,
     startListening,
     stopListening,
@@ -114,16 +115,16 @@ export default function ChatBot() {
     <div className="flex flex-col h-full max-h-[calc(100vh-8rem)]">
       {/* Avatar */}
       <div className="flex justify-center py-4">
-        <Avatar isSpeaking={isSpeaking} isThinking={isLoading} />
+        <Avatar isSpeaking={isSpeaking} isThinking={isLoading} mouthOpen={mouthOpen} />
       </div>
 
       {/* Chat Messages */}
       <div className="flex-1 overflow-y-auto px-4 space-y-4 min-h-0">
         {messages.length === 0 && (
           <div className="text-center text-gray-500 py-8">
-            <p className="text-lg mb-2">Welcome! I'm NiVa, your Nipah Virus Assistant.</p>
+            <p className="text-lg mb-2">Welcome! I am Dr. NiVa, your virtual infectious disease consultant.</p>
             <p className="text-sm">
-              Ask me anything about Nipah virus — symptoms, prevention, transmission, or treatment.
+              Ask me about Nipah symptoms, prevention, transmission, or when to seek urgent medical care.
             </p>
             <div className="flex flex-wrap justify-center gap-2 mt-4">
               {[
@@ -223,7 +224,7 @@ export default function ChatBot() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={isListening ? 'Listening...' : 'Ask about Nipah virus...'}
+            placeholder={isListening ? 'Listening...' : 'Ask Dr. NiVa about Nipah virus...'}
             className="flex-1 bg-transparent text-white placeholder-gray-500 outline-none text-sm"
             disabled={isLoading}
           />
