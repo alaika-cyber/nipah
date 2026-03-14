@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { CalendarPlus, Hospital, MapPinned, Search, Stethoscope, UserRoundCog } from 'lucide-react';
+import { CircleMarker, MapContainer, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 import {
   approveManagerRequest,
   authLogin,
@@ -16,6 +17,136 @@ import {
   type Doctor,
   type Hospital as HospitalType,
 } from '../services/api';
+
+type LatLngTuple = [number, number];
+
+const DEFAULT_MAP_CENTER: LatLngTuple = [20.5937, 78.9629];
+const DEFAULT_MAP_ZOOM = 5;
+
+function isValidCoord(latitude: number, longitude: number): boolean {
+  return Number.isFinite(latitude) && Number.isFinite(longitude) && Math.abs(latitude) <= 90 && Math.abs(longitude) <= 180;
+}
+
+function toCoordString(value: number): string {
+  return value.toFixed(6);
+}
+
+function RecenterMap({ center, zoom }: { center: LatLngTuple; zoom: number }) {
+  const map = useMap();
+
+  useEffect(() => {
+    map.setView(center, zoom, { animate: true });
+  }, [center, map, zoom]);
+
+  return null;
+}
+
+function LocationPickerMap({
+  latitude,
+  longitude,
+  onPick,
+}: {
+  latitude: number | null;
+  longitude: number | null;
+  onPick: (lat: number, lng: number) => void;
+}) {
+  const hasSelected = latitude !== null && longitude !== null && isValidCoord(latitude, longitude);
+  const center: LatLngTuple = hasSelected ? [latitude, longitude] : DEFAULT_MAP_CENTER;
+  const zoom = hasSelected ? 13 : DEFAULT_MAP_ZOOM;
+
+  function ClickHandler() {
+    useMapEvents({
+      click(event) {
+        onPick(event.latlng.lat, event.latlng.lng);
+      },
+    });
+    return null;
+  }
+
+  return (
+    <MapContainer center={center} zoom={zoom} className="h-56 w-full rounded-lg border border-gray-700">
+      <TileLayer
+        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+      />
+      <RecenterMap center={center} zoom={zoom} />
+      <ClickHandler />
+      {hasSelected && (
+        <CircleMarker center={[latitude, longitude]} radius={8} pathOptions={{ color: '#22c55e', fillColor: '#22c55e', fillOpacity: 0.8 }}>
+          <Popup>
+            Selected location
+            <br />
+            {latitude.toFixed(6)}, {longitude.toFixed(6)}
+          </Popup>
+        </CircleMarker>
+      )}
+    </MapContainer>
+  );
+}
+
+function HospitalDiscoveryMap({
+  hospitals,
+  selectedHospitalId,
+  onSelectHospital,
+}: {
+  hospitals: HospitalType[];
+  selectedHospitalId: number | null;
+  onSelectHospital: (hospitalId: number) => void;
+}) {
+  const selectedHospital = hospitals.find((hospital) => hospital.id === selectedHospitalId) ?? null;
+  const center: LatLngTuple =
+    selectedHospital && isValidCoord(selectedHospital.latitude, selectedHospital.longitude)
+      ? [selectedHospital.latitude, selectedHospital.longitude]
+      : hospitals.length > 0 && isValidCoord(hospitals[0].latitude, hospitals[0].longitude)
+      ? [hospitals[0].latitude, hospitals[0].longitude]
+      : DEFAULT_MAP_CENTER;
+
+  const zoom = selectedHospital ? 12 : DEFAULT_MAP_ZOOM;
+
+  return (
+    <MapContainer center={center} zoom={zoom} className="h-56 w-full rounded-lg border border-gray-700">
+      <TileLayer
+        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+      />
+      <RecenterMap center={center} zoom={zoom} />
+      {hospitals
+        .filter((hospital) => isValidCoord(hospital.latitude, hospital.longitude))
+        .map((hospital) => {
+          const active = hospital.id === selectedHospitalId;
+          return (
+            <CircleMarker
+              key={hospital.id}
+              center={[hospital.latitude, hospital.longitude]}
+              radius={active ? 10 : 7}
+              pathOptions={{
+                color: active ? '#22c55e' : '#6366f1',
+                fillColor: active ? '#22c55e' : '#6366f1',
+                fillOpacity: 0.85,
+              }}
+              eventHandlers={{ click: () => onSelectHospital(hospital.id) }}
+            >
+              <Popup>
+                <strong>{hospital.name}</strong>
+                <br />
+                {hospital.address}, {hospital.city}
+                <br />
+                {hospital.contact}
+                <br />
+                <button
+                  type="button"
+                  className="mt-2 rounded bg-indigo-600 px-2 py-1 text-xs text-white"
+                  onClick={() => onSelectHospital(hospital.id)}
+                >
+                  Select Hospital
+                </button>
+              </Popup>
+            </CircleMarker>
+          );
+        })}
+    </MapContainer>
+  );
+}
 
 type UserRole = 'patient' | 'manager' | 'admin';
 
@@ -59,6 +190,17 @@ export default function HospitalBooking() {
   const [managerUsernameLookup, setManagerUsernameLookup] = useState('');
 
   const [hospitalForm, setHospitalForm] = useState({
+    name: '',
+    address: '',
+    city: '',
+    contact: '',
+    latitude: '',
+    longitude: '',
+    manager_username: '',
+    manager_password: '',
+  });
+
+  const [managerHospitalForm, setManagerHospitalForm] = useState({
     name: '',
     address: '',
     city: '',
@@ -175,6 +317,14 @@ export default function HospitalBooking() {
         setAuthUserPassword(authForm.password);
         setMessage(`${selectedRole} login successful.`);
 
+        if (selectedRole === 'manager') {
+          setManagerHospitalForm((prev) => ({
+            ...prev,
+            manager_username: prev.manager_username || authForm.email,
+            manager_password: prev.manager_password || authForm.password,
+          }));
+        }
+
         if (selectedRole === 'admin') {
           const pending = await getPendingManagerRequests(authForm.email, authForm.password);
           setPendingManagers(pending.pending_requests);
@@ -256,6 +406,68 @@ export default function HospitalBooking() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleRegisterHospitalForManager = async (e: FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setError('');
+    setMessage('');
+
+    try {
+      await registerHospital({
+        ...managerHospitalForm,
+        latitude: Number.parseFloat(managerHospitalForm.latitude),
+        longitude: Number.parseFloat(managerHospitalForm.longitude),
+      });
+      setMessage('Hospital registered successfully.');
+      setManagerHospitalForm((prev) => ({
+        name: '',
+        address: '',
+        city: '',
+        contact: '',
+        latitude: '',
+        longitude: '',
+        manager_username: prev.manager_username,
+        manager_password: prev.manager_password,
+      }));
+      await fetchHospitals();
+    } catch {
+      setError('Hospital registration failed. Ensure manager username is unique.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const applyCurrentLocation = (target: 'patient' | 'admin' | 'manager') => {
+    if (!navigator.geolocation) {
+      setError('Geolocation is not supported in this browser.');
+      return;
+    }
+
+    setError('');
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const latitude = toCoordString(position.coords.latitude);
+        const longitude = toCoordString(position.coords.longitude);
+
+        if (target === 'patient') {
+          setNearbyLat(latitude);
+          setNearbyLng(longitude);
+        }
+
+        if (target === 'admin') {
+          setHospitalForm((prev) => ({ ...prev, latitude, longitude }));
+        }
+
+        if (target === 'manager') {
+          setManagerHospitalForm((prev) => ({ ...prev, latitude, longitude }));
+        }
+      },
+      () => {
+        setError('Unable to access your current location. Please allow location permission.');
+      }
+    );
   };
 
   const handleFetchSlots = async () => {
@@ -488,6 +700,25 @@ export default function HospitalBooking() {
                 <input className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2" placeholder="Latitude" value={hospitalForm.latitude} onChange={(e) => setHospitalForm({ ...hospitalForm, latitude: e.target.value })} required type="number" step="0.000001" />
                 <input className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2" placeholder="Longitude" value={hospitalForm.longitude} onChange={(e) => setHospitalForm({ ...hospitalForm, longitude: e.target.value })} required type="number" step="0.000001" />
               </div>
+              <button
+                type="button"
+                className="w-full py-2 bg-sky-600 hover:bg-sky-500 rounded-lg font-medium"
+                onClick={() => applyCurrentLocation('admin')}
+              >
+                Use Current Location
+              </button>
+              <LocationPickerMap
+                latitude={Number.isFinite(Number.parseFloat(hospitalForm.latitude)) ? Number.parseFloat(hospitalForm.latitude) : null}
+                longitude={Number.isFinite(Number.parseFloat(hospitalForm.longitude)) ? Number.parseFloat(hospitalForm.longitude) : null}
+                onPick={(lat, lng) =>
+                  setHospitalForm((prev) => ({
+                    ...prev,
+                    latitude: toCoordString(lat),
+                    longitude: toCoordString(lng),
+                  }))
+                }
+              />
+              <p className="text-xs text-gray-400">Click on the map to set hospital latitude and longitude.</p>
               <div className="grid grid-cols-2 gap-2">
                 <input className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2" placeholder="Manager username" value={hospitalForm.manager_username} onChange={(e) => setHospitalForm({ ...hospitalForm, manager_username: e.target.value })} required />
                 <input className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2" placeholder="Manager password" value={hospitalForm.manager_password} onChange={(e) => setHospitalForm({ ...hospitalForm, manager_password: e.target.value })} required type="password" />
@@ -524,6 +755,51 @@ export default function HospitalBooking() {
 
       {selectedRole === 'manager' && isRoleAuthenticated && (
         <>
+          <section className="bg-gray-900/60 border border-gray-700 rounded-2xl p-4">
+            <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+              <Hospital size={18} />
+              Manager: Register Hospital
+            </h3>
+            <form className="space-y-2" onSubmit={handleRegisterHospitalForManager}>
+              <input className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2" placeholder="Hospital name" value={managerHospitalForm.name} onChange={(e) => setManagerHospitalForm({ ...managerHospitalForm, name: e.target.value })} required />
+              <input className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2" placeholder="Address" value={managerHospitalForm.address} onChange={(e) => setManagerHospitalForm({ ...managerHospitalForm, address: e.target.value })} required />
+              <div className="grid grid-cols-2 gap-2">
+                <input className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2" placeholder="City" value={managerHospitalForm.city} onChange={(e) => setManagerHospitalForm({ ...managerHospitalForm, city: e.target.value })} required />
+                <input className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2" placeholder="Contact" value={managerHospitalForm.contact} onChange={(e) => setManagerHospitalForm({ ...managerHospitalForm, contact: e.target.value })} required />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <input className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2" placeholder="Latitude" value={managerHospitalForm.latitude} onChange={(e) => setManagerHospitalForm({ ...managerHospitalForm, latitude: e.target.value })} required type="number" step="0.000001" />
+                <input className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2" placeholder="Longitude" value={managerHospitalForm.longitude} onChange={(e) => setManagerHospitalForm({ ...managerHospitalForm, longitude: e.target.value })} required type="number" step="0.000001" />
+              </div>
+              <button
+                type="button"
+                className="w-full py-2 bg-sky-600 hover:bg-sky-500 rounded-lg font-medium"
+                onClick={() => applyCurrentLocation('manager')}
+              >
+                Use Current Location
+              </button>
+              <LocationPickerMap
+                latitude={Number.isFinite(Number.parseFloat(managerHospitalForm.latitude)) ? Number.parseFloat(managerHospitalForm.latitude) : null}
+                longitude={Number.isFinite(Number.parseFloat(managerHospitalForm.longitude)) ? Number.parseFloat(managerHospitalForm.longitude) : null}
+                onPick={(lat, lng) =>
+                  setManagerHospitalForm((prev) => ({
+                    ...prev,
+                    latitude: toCoordString(lat),
+                    longitude: toCoordString(lng),
+                  }))
+                }
+              />
+              <p className="text-xs text-gray-400">Click on the map to set hospital latitude and longitude.</p>
+              <div className="grid grid-cols-2 gap-2">
+                <input className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2" placeholder="Manager username" value={managerHospitalForm.manager_username} onChange={(e) => setManagerHospitalForm({ ...managerHospitalForm, manager_username: e.target.value })} required />
+                <input className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2" placeholder="Manager password" value={managerHospitalForm.manager_password} onChange={(e) => setManagerHospitalForm({ ...managerHospitalForm, manager_password: e.target.value })} required type="password" />
+              </div>
+              <button disabled={isLoading} className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg font-medium disabled:opacity-60">
+                Save Hospital
+              </button>
+            </form>
+          </section>
+
           <section className="bg-gray-900/60 border border-gray-700 rounded-2xl p-4">
             <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
               <UserRoundCog size={18} />
@@ -625,6 +901,15 @@ export default function HospitalBooking() {
                 <button onClick={fetchHospitals} className="px-4 bg-indigo-600 hover:bg-indigo-500 rounded-lg">Go</button>
               </div>
             </div>
+            <div className="flex justify-end">
+              <button
+                type="button"
+                className="px-3 py-2 bg-sky-600 hover:bg-sky-500 rounded-lg text-sm"
+                onClick={() => applyCurrentLocation('patient')}
+              >
+                Use My Current Location
+              </button>
+            </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
@@ -660,24 +945,28 @@ export default function HospitalBooking() {
                   <MapPinned size={16} />
                   Map View
                 </div>
+                <HospitalDiscoveryMap
+                  hospitals={hospitals}
+                  selectedHospitalId={selectedHospitalId}
+                  onSelectHospital={(hospitalId) => {
+                    setSelectedHospitalId(hospitalId);
+                    setSelectedDoctorId(null);
+                    setAvailableSlots([]);
+                    setSelectedSlot('');
+                    loadDoctors(hospitalId);
+                  }}
+                />
                 {selectedHospital ? (
-                  <>
-                    <iframe
-                      title="hospital-map"
-                      className="w-full h-56 rounded-lg border border-gray-700"
-                      src={`https://www.openstreetmap.org/export/embed.html?bbox=${selectedHospital.longitude - 0.05}%2C${selectedHospital.latitude - 0.05}%2C${selectedHospital.longitude + 0.05}%2C${selectedHospital.latitude + 0.05}&layer=mapnik&marker=${selectedHospital.latitude}%2C${selectedHospital.longitude}`}
-                    />
-                    <a
-                      className="text-sm text-indigo-300 hover:text-indigo-200 mt-2 inline-block"
-                      href={`https://www.openstreetmap.org/?mlat=${selectedHospital.latitude}&mlon=${selectedHospital.longitude}#map=13/${selectedHospital.latitude}/${selectedHospital.longitude}`}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Open full map for {selectedHospital.name}
-                    </a>
-                  </>
+                  <a
+                    className="text-sm text-indigo-300 hover:text-indigo-200 mt-2 inline-block"
+                    href={`https://www.openstreetmap.org/?mlat=${selectedHospital.latitude}&mlon=${selectedHospital.longitude}#map=13/${selectedHospital.latitude}/${selectedHospital.longitude}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Open full map for {selectedHospital.name}
+                  </a>
                 ) : (
-                  <p className="text-sm text-gray-500">Select a hospital to display map location.</p>
+                  <p className="text-sm text-gray-500 mt-2">Select a hospital from list or map marker.</p>
                 )}
               </div>
             </div>
