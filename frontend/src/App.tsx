@@ -1,49 +1,16 @@
-import { useState } from 'react';
-import { MessageCircle, Droplets, ClipboardList, AlertTriangle, Hospital, ShieldAlert } from 'lucide-react';
-import ChatBot from './components/ChatBot';
-import BloodRisk from './components/BloodRisk';
-import SymptomRisk from './components/SymptomRisk';
-import HospitalBooking from './components/HospitalBooking';
-import AdminDashboard from './components/AdminDashboard';
+import { AlertTriangle, User, Briefcase, ShieldAlert } from 'lucide-react';
+import { Routes, Route, NavLink } from 'react-router-dom';
+import UserPage from './pages/UserPage';
+import ManagerPage from './pages/ManagerPage';
+import AdminPage from './pages/AdminPage';
 
-type Tab = 'chatbot' | 'blood' | 'symptoms' | 'hospital' | 'dashboard';
-
-const TABS: { id: Tab; label: string; icon: React.ReactNode; description: string }[] = [
-  {
-    id: 'chatbot',
-    label: 'AI Chatbot',
-    icon: <MessageCircle size={20} />,
-    description: 'Ask questions about Nipah virus',
-  },
-  {
-    id: 'blood',
-    label: 'Blood Risk',
-    icon: <Droplets size={20} />,
-    description: 'ML-based blood parameter analysis',
-  },
-  {
-    id: 'symptoms',
-    label: 'Symptom Check',
-    icon: <ClipboardList size={20} />,
-    description: 'Rule-based symptom assessment',
-  },
-  {
-    id: 'hospital',
-    label: 'Hospitals & Booking',
-    icon: <Hospital size={20} />,
-    description: 'Find hospitals and book appointments',
-  },
-  {
-    id: 'dashboard',
-    label: 'Admin Monitoring',
-    icon: <ShieldAlert size={20} />,
-    description: 'State-wise zones and outbreak stats',
-  },
+const NAV_LINKS = [
+  { to: '/', label: 'User', icon: <User size={18} /> },
+  { to: '/manager', label: 'Manager', icon: <Briefcase size={18} /> },
+  { to: '/admin', label: 'Admin', icon: <ShieldAlert size={18} /> },
 ];
 
 function App() {
-  const [activeTab, setActiveTab] = useState<Tab>('chatbot');
-
   return (
     <div className="min-h-screen bg-gray-950 text-white flex flex-col">
       {/* Header */}
@@ -59,7 +26,7 @@ function App() {
                   Nipah Virus Awareness Platform
                 </h1>
                 <p className="text-xs text-gray-400">
-                  AI-Powered Health Education & Risk Assessment
+                  AI-Powered Health Education &amp; Risk Assessment
                 </p>
               </div>
             </div>
@@ -71,42 +38,38 @@ function App() {
         </div>
       </header>
 
-      {/* Tab Navigation */}
+      {/* Role Navigation */}
       <nav className="bg-gray-900/50 border-b border-gray-800">
         <div className="max-w-6xl mx-auto px-4">
-          <div className="flex gap-1 overflow-x-auto py-2">
-            {TABS.map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium whitespace-nowrap transition-all cursor-pointer ${
-                  activeTab === tab.id
-                    ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20'
-                    : 'text-gray-400 hover:text-white hover:bg-gray-800'
-                }`}
+          <div className="flex gap-1 py-2">
+            {NAV_LINKS.map((link) => (
+              <NavLink
+                key={link.to}
+                to={link.to}
+                end={link.to === '/'}
+                className={({ isActive }) =>
+                  `flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium whitespace-nowrap transition-all ${
+                    isActive
+                      ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20'
+                      : 'text-gray-400 hover:text-white hover:bg-gray-800'
+                  }`
+                }
               >
-                {tab.icon}
-                <span>{tab.label}</span>
-                <span
-                  className={`hidden md:inline text-xs ${
-                    activeTab === tab.id ? 'text-indigo-200' : 'text-gray-600'
-                  }`}
-                >
-                  — {tab.description}
-                </span>
-              </button>
+                {link.icon}
+                <span>{link.label}</span>
+              </NavLink>
             ))}
           </div>
         </div>
       </nav>
 
       {/* Main Content */}
-      <main className="flex-1 max-w-6xl mx-auto w-full">
-        {activeTab === 'chatbot' && <ChatBot />}
-        {activeTab === 'blood' && <BloodRisk />}
-        {activeTab === 'symptoms' && <SymptomRisk />}
-        {activeTab === 'hospital' && <HospitalBooking />}
-        {activeTab === 'dashboard' && <AdminDashboard />}
+      <main className="flex-1 max-w-6xl mx-auto w-full px-4 py-4">
+        <Routes>
+          <Route path="/" element={<UserPage />} />
+          <Route path="/manager" element={<ManagerPage />} />
+          <Route path="/admin" element={<AdminPage />} />
+        </Routes>
       </main>
 
       {/* Footer */}
