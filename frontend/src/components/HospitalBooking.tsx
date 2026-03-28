@@ -11,6 +11,7 @@ import {
   getHospitals,
   getManagerAppointments,
   getPendingManagerRequests,
+  hospitalLogin,
   registerDoctor,
   registerHospital,
   type Appointment,
@@ -148,7 +149,7 @@ function HospitalDiscoveryMap({
   );
 }
 
-type UserRole = 'patient' | 'manager' | 'admin';
+type UserRole = 'patient' | 'manager' | 'admin' | 'hospital';
 
 const DEFAULT_AVAILABILITY = JSON.stringify(
   {
@@ -167,7 +168,7 @@ export default function HospitalBooking() {
 
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
   const [authForm, setAuthForm] = useState({ email: '', password: '' });
-  const [authenticatedRole, setAuthenticatedRole] = useState<'manager' | 'admin' | null>(null);
+  const [authenticatedRole, setAuthenticatedRole] = useState<'manager' | 'admin' | 'hospital' | null>(null);
   const [authUserEmail, setAuthUserEmail] = useState('');
   const [authUserPassword, setAuthUserPassword] = useState('');
   const [pendingManagers, setPendingManagers] = useState<Array<{ email: string; status: string; created_at: string }>>([]);
@@ -242,7 +243,7 @@ export default function HospitalBooking() {
     [doctors, selectedDoctorId]
   );
 
-  const roleNeedsAuth = selectedRole === 'manager' || selectedRole === 'admin';
+  const roleNeedsAuth = selectedRole === 'manager' || selectedRole === 'admin' || selectedRole === 'hospital';
   const isRoleAuthenticated = !roleNeedsAuth || authenticatedRole === selectedRole;
 
   const fetchHospitals = async () => {
@@ -304,26 +305,33 @@ export default function HospitalBooking() {
     setIsLoading(true);
 
     try {
+      if (selectedRole === 'hospital') {
+        if (authMode === 'login') {
+          await hospitalLogin({ username: authForm.email, password: authForm.password });
+          setAuthenticatedRole('hospital');
+          setAuthUserEmail(authForm.email);
+          setAuthUserPassword(authForm.password);
+          setMessage('Hospital manager login successful.');
+          setManagerUsernameLookup(authForm.email);
+        } else {
+          setError('Hospital managers must be registered by an Admin.');
+        }
+        setIsLoading(false);
+        return;
+      }
+
       const payload = {
-        role: selectedRole,
+        role: selectedRole as 'admin' | 'manager',
         email: authForm.email,
         password: authForm.password,
       };
 
       if (authMode === 'login') {
         await authLogin(payload);
-        setAuthenticatedRole(selectedRole);
+        setAuthenticatedRole(selectedRole as 'admin' | 'manager');
         setAuthUserEmail(authForm.email);
         setAuthUserPassword(authForm.password);
         setMessage(`${selectedRole} login successful.`);
-
-        if (selectedRole === 'manager') {
-          setManagerHospitalForm((prev) => ({
-            ...prev,
-            manager_username: prev.manager_username || authForm.email,
-            manager_password: prev.manager_password || authForm.password,
-          }));
-        }
 
         if (selectedRole === 'admin') {
           const pending = await getPendingManagerRequests(authForm.email, authForm.password);
@@ -352,6 +360,8 @@ export default function HospitalBooking() {
         ...hospitalForm,
         latitude: Number.parseFloat(hospitalForm.latitude),
         longitude: Number.parseFloat(hospitalForm.longitude),
+        admin_email: authUserEmail,
+        admin_password: authUserPassword,
       });
       setMessage('Hospital registered successfully.');
       setHospitalForm({
@@ -382,7 +392,8 @@ export default function HospitalBooking() {
       const availability = JSON.parse(doctorForm.availability) as Record<string, string[]>;
       await registerDoctor({
         hospital_id: Number.parseInt(doctorForm.hospital_id, 10),
-        manager_username: doctorForm.manager_username,
+        manager_username: authUserEmail,
+        manager_password: authUserPassword,
         name: doctorForm.name,
         specialization: doctorForm.specialization,
         contact: doctorForm.contact,
@@ -419,6 +430,8 @@ export default function HospitalBooking() {
         ...managerHospitalForm,
         latitude: Number.parseFloat(managerHospitalForm.latitude),
         longitude: Number.parseFloat(managerHospitalForm.longitude),
+        admin_email: '', // This will fail if not admin, correctly.
+        admin_password: '',
       });
       setMessage('Hospital registered successfully.');
       setManagerHospitalForm((prev) => ({
@@ -521,13 +534,11 @@ export default function HospitalBooking() {
   };
 
   const handleViewManagerAppointments = async () => {
-    if (!managerUsernameLookup.trim()) {
-      setError('Enter manager username to view appointments.');
-      return;
-    }
-    setError('');
     try {
-      const response = await getManagerAppointments(managerUsernameLookup.trim());
+      const response = await getManagerAppointments({
+        manager_username: authUserEmail,
+        manager_password: authUserPassword,
+      });
       setManagerAppointments(response.appointments);
     } catch {
       setError('Failed to fetch manager appointments.');
@@ -549,8 +560,9 @@ export default function HospitalBooking() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           {([
             { key: 'patient', label: 'Patient', desc: 'Discover hospitals and book appointments' },
-            { key: 'manager', label: 'Manager', desc: 'Register doctors and view appointments' },
-            { key: 'admin', label: 'Admin', desc: 'Login + approve manager requests' },
+            { key: 'hospital', label: 'Hospital', desc: 'Manage doctors and view appointments' },
+            { key: 'manager', label: 'Monitoring', desc: 'Access risk monitoring dashboard' },
+            { key: 'admin', label: 'Admin', desc: 'Register hospitals and approve managers' },
           ] as const).map((role) => (
             <button
               key={role.key}
@@ -575,314 +587,132 @@ export default function HospitalBooking() {
         </div>
       </section>
 
+      {selectedRole === 'hospital' && isRoleAuthenticated && (
+        <section className="bg-gray-900/60 border border-gray-700 rounded-2xl p-4">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+              <UserRoundCog size={18} />
+              Hospital Manager: {authUserEmail}
+            </h3>
+            <button
+              onClick={handleViewManagerAppointments}
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-sm text-white"
+            >
+              Refresh Appointments
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="space-y-4">
+              <h4 className="text-md font-medium text-gray-200">Register New Doctor</h4>
+              <form onSubmit={handleRegisterDoctor} className="space-y-2">
+                <input
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2"
+                  placeholder="Hospital ID"
+                  value={doctorForm.hospital_id}
+                  onChange={(e) => setDoctorForm({ ...doctorForm, hospital_id: e.target.value })}
+                  required
+                />
+                <input
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2"
+                  placeholder="Doctor Name"
+                  value={doctorForm.name}
+                  onChange={(e) => setDoctorForm({ ...doctorForm, name: e.target.value })}
+                  required
+                />
+                <input
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2"
+                  placeholder="Specialization"
+                  value={doctorForm.specialization}
+                  onChange={(e) => setDoctorForm({ ...doctorForm, specialization: e.target.value })}
+                  required
+                />
+                <input
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2"
+                  placeholder="Contact"
+                  value={doctorForm.contact}
+                  onChange={(e) => setDoctorForm({ ...doctorForm, contact: e.target.value })}
+                  required
+                />
+                <div className="text-xs text-gray-500 mb-1">Availability (JSON format)</div>
+                <textarea
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 h-32 font-mono text-xs"
+                  value={doctorForm.availability}
+                  onChange={(e) => setDoctorForm({ ...doctorForm, availability: e.target.value })}
+                  required
+                />
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2"
+                    placeholder="Doctor Username"
+                    value={doctorForm.username}
+                    onChange={(e) => setDoctorForm({ ...doctorForm, username: e.target.value })}
+                    required
+                  />
+                  <input
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2"
+                    placeholder="Doctor Password"
+                    type="password"
+                    value={doctorForm.password}
+                    onChange={(e) => setDoctorForm({ ...doctorForm, password: e.target.value })}
+                    required
+                  />
+                </div>
+                <button
+                  disabled={isLoading}
+                  className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg font-medium"
+                >
+                  Register Doctor
+                </button>
+              </form>
+            </div>
+
+            <div>
+              <h4 className="text-md font-medium text-gray-200 mb-3">Upcoming Appointments</h4>
+              {managerAppointments.length === 0 ? (
+                <div className="text-center py-10 bg-gray-800/30 rounded-xl border border-dashed border-gray-700 text-gray-500">
+                  No appointments found for this hospital manager.
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-[500px] overflow-y-auto pr-2">
+                  {managerAppointments.map((app) => (
+                    <div key={app.id} className="bg-gray-800/60 border border-gray-700 rounded-xl p-3 text-sm">
+                      <div className="flex justify-between items-start mb-2">
+                        <div>
+                          <div className="text-white font-medium">{app.patient_name}</div>
+                          <div className="text-xs text-gray-400">{app.patient_contact}</div>
+                        </div>
+                        <div className="text-amber-400 font-medium">#{app.id}</div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-y-1 text-xs">
+                        <div className="text-gray-400">Doctor:</div>
+                        <div className="text-gray-200">{app.doctor_name}</div>
+                        <div className="text-gray-400">Date/Time:</div>
+                        <div className="text-gray-200">{app.appointment_date} @ {app.appointment_time}</div>
+                        <div className="text-gray-400">Status:</div>
+                        <div className="text-emerald-400 uppercase font-bold text-[10px]">{app.status}</div>
+                      </div>
+                      {app.notes && (
+                        <div className="mt-2 p-2 bg-gray-900/50 rounded text-gray-300 text-[11px]">
+                          Note: {app.notes}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
+
       {message && <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/40 text-emerald-300 text-sm">{message}</div>}
       {error && <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/40 text-red-300 text-sm">{error}</div>}
 
       {!selectedRole && (
         <div className="p-4 rounded-xl bg-sky-500/10 border border-sky-500/30 text-sky-200 text-sm">
-          Select Patient, Manager, or Admin to continue.
+          Select Patient, Hospital, Monitoring, or Admin to continue.
         </div>
-      )}
-
-      {roleNeedsAuth && !isRoleAuthenticated && (
-        <section className="bg-gray-900/60 border border-gray-700 rounded-2xl p-4 max-w-xl mx-auto">
-          <h3 className="text-lg font-semibold text-white mb-2">
-            {selectedRole === 'admin' ? 'Admin Login' : `Manager ${authMode === 'login' ? 'Login' : 'Sign Up'}`}
-          </h3>
-          <p className="text-xs text-gray-400 mb-3">
-            Public users cannot access {selectedRole} values/parameters without authentication.
-          </p>
-
-          {selectedRole === 'manager' && (
-            <div className="flex gap-2 mb-3">
-              <button
-                onClick={() => setAuthMode('login')}
-                className={`px-3 py-1.5 rounded-lg text-sm ${authMode === 'login' ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-300'}`}
-              >
-                Login
-              </button>
-              <button
-                onClick={() => setAuthMode('signup')}
-                className={`px-3 py-1.5 rounded-lg text-sm ${authMode === 'signup' ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-300'}`}
-              >
-                Sign Up Request
-              </button>
-            </div>
-          )}
-
-          <form onSubmit={handleAuthSubmit} className="space-y-2">
-            <input
-              type="email"
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2"
-              placeholder="Email"
-              value={authForm.email}
-              onChange={(e) => setAuthForm({ ...authForm, email: e.target.value })}
-              required
-            />
-            <input
-              type="password"
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2"
-              placeholder="Password"
-              value={authForm.password}
-              onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })}
-              required
-            />
-            <button
-              disabled={isLoading}
-              className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg font-medium disabled:opacity-60"
-            >
-              {selectedRole === 'admin' || authMode === 'login' ? 'Login' : 'Create Signup Request'}
-            </button>
-          </form>
-
-          <div className="mt-3 text-xs text-gray-500">
-            Default credentials are seeded from backend environment variables.
-          </div>
-        </section>
-      )}
-
-      {roleNeedsAuth && isRoleAuthenticated && (
-        <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/40 text-emerald-300 text-sm">
-          Authenticated as {authUserEmail} ({selectedRole})
-        </div>
-      )}
-
-      {selectedRole === 'admin' && isRoleAuthenticated && (
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-          <section className="bg-gray-900/60 border border-gray-700 rounded-2xl p-4 xl:col-span-2">
-            <h3 className="text-lg font-semibold text-white mb-3">Admin: Manager Signup Requests</h3>
-            <div className="space-y-2">
-              {pendingManagers.length === 0 && (
-                <p className="text-sm text-gray-400">No pending manager requests.</p>
-              )}
-
-              {pendingManagers.map((req) => (
-                <div key={req.email} className="flex items-center justify-between bg-gray-800/60 border border-gray-700 rounded-lg p-3">
-                  <div>
-                    <div className="text-white text-sm">{req.email}</div>
-                    <div className="text-xs text-gray-400">Requested at: {new Date(req.created_at).toLocaleString()}</div>
-                  </div>
-                  <button
-                    onClick={async () => {
-                      setError('');
-                      setMessage('');
-                      try {
-                        await approveManagerRequest(authUserEmail, authUserPassword, req.email);
-                        const pending = await getPendingManagerRequests(authUserEmail, authUserPassword);
-                        setPendingManagers(pending.pending_requests);
-                        setMessage(`Approved manager: ${req.email}`);
-                      } catch {
-                        setError('Failed to approve manager request.');
-                      }
-                    }}
-                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-sm"
-                  >
-                    Approve
-                  </button>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          <section className="bg-gray-900/60 border border-gray-700 rounded-2xl p-4">
-            <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
-              <Hospital size={18} />
-              Admin: Register Hospital
-            </h3>
-            <form className="space-y-2" onSubmit={handleRegisterHospital}>
-              <input className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2" placeholder="Hospital name" value={hospitalForm.name} onChange={(e) => setHospitalForm({ ...hospitalForm, name: e.target.value })} required />
-              <input className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2" placeholder="Address" value={hospitalForm.address} onChange={(e) => setHospitalForm({ ...hospitalForm, address: e.target.value })} required />
-              <div className="grid grid-cols-2 gap-2">
-                <input className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2" placeholder="City" value={hospitalForm.city} onChange={(e) => setHospitalForm({ ...hospitalForm, city: e.target.value })} required />
-                <input className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2" placeholder="Contact" value={hospitalForm.contact} onChange={(e) => setHospitalForm({ ...hospitalForm, contact: e.target.value })} required />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <input className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2" placeholder="Latitude" value={hospitalForm.latitude} onChange={(e) => setHospitalForm({ ...hospitalForm, latitude: e.target.value })} required type="number" step="0.000001" />
-                <input className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2" placeholder="Longitude" value={hospitalForm.longitude} onChange={(e) => setHospitalForm({ ...hospitalForm, longitude: e.target.value })} required type="number" step="0.000001" />
-              </div>
-              <button
-                type="button"
-                className="w-full py-2 bg-sky-600 hover:bg-sky-500 rounded-lg font-medium"
-                onClick={() => applyCurrentLocation('admin')}
-              >
-                Use Current Location
-              </button>
-              <LocationPickerMap
-                latitude={Number.isFinite(Number.parseFloat(hospitalForm.latitude)) ? Number.parseFloat(hospitalForm.latitude) : null}
-                longitude={Number.isFinite(Number.parseFloat(hospitalForm.longitude)) ? Number.parseFloat(hospitalForm.longitude) : null}
-                onPick={(lat, lng) =>
-                  setHospitalForm((prev) => ({
-                    ...prev,
-                    latitude: toCoordString(lat),
-                    longitude: toCoordString(lng),
-                  }))
-                }
-              />
-              <p className="text-xs text-gray-400">Click on the map to set hospital latitude and longitude.</p>
-              <div className="grid grid-cols-2 gap-2">
-                <input className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2" placeholder="Manager username" value={hospitalForm.manager_username} onChange={(e) => setHospitalForm({ ...hospitalForm, manager_username: e.target.value })} required />
-                <input className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2" placeholder="Manager password" value={hospitalForm.manager_password} onChange={(e) => setHospitalForm({ ...hospitalForm, manager_password: e.target.value })} required type="password" />
-              </div>
-              <button disabled={isLoading} className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg font-medium disabled:opacity-60">
-                Save Hospital
-              </button>
-            </form>
-          </section>
-
-          <section className="bg-gray-900/60 border border-gray-700 rounded-2xl p-4">
-            <h3 className="text-lg font-semibold text-white mb-3">Admin Parameters and Values</h3>
-            <div className="space-y-2 text-sm">
-              <div className="bg-gray-800/60 border border-gray-700 rounded-lg p-3">
-                <div className="text-gray-400">Hospital Name</div>
-                <div className="text-white">{hospitalForm.name || '-'}</div>
-              </div>
-              <div className="bg-gray-800/60 border border-gray-700 rounded-lg p-3">
-                <div className="text-gray-400">City</div>
-                <div className="text-white">{hospitalForm.city || '-'}</div>
-              </div>
-              <div className="bg-gray-800/60 border border-gray-700 rounded-lg p-3">
-                <div className="text-gray-400">Manager Username</div>
-                <div className="text-white">{hospitalForm.manager_username || '-'}</div>
-              </div>
-              <div className="bg-gray-800/60 border border-gray-700 rounded-lg p-3">
-                <div className="text-gray-400">Coordinates</div>
-                <div className="text-white">{hospitalForm.latitude || '-'}, {hospitalForm.longitude || '-'}</div>
-              </div>
-            </div>
-          </section>
-        </div>
-      )}
-
-      {selectedRole === 'manager' && isRoleAuthenticated && (
-        <>
-          <section className="bg-gray-900/60 border border-gray-700 rounded-2xl p-4">
-            <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
-              <Hospital size={18} />
-              Manager: Register Hospital
-            </h3>
-            <form className="space-y-2" onSubmit={handleRegisterHospitalForManager}>
-              <input className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2" placeholder="Hospital name" value={managerHospitalForm.name} onChange={(e) => setManagerHospitalForm({ ...managerHospitalForm, name: e.target.value })} required />
-              <input className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2" placeholder="Address" value={managerHospitalForm.address} onChange={(e) => setManagerHospitalForm({ ...managerHospitalForm, address: e.target.value })} required />
-              <div className="grid grid-cols-2 gap-2">
-                <input className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2" placeholder="City" value={managerHospitalForm.city} onChange={(e) => setManagerHospitalForm({ ...managerHospitalForm, city: e.target.value })} required />
-                <input className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2" placeholder="Contact" value={managerHospitalForm.contact} onChange={(e) => setManagerHospitalForm({ ...managerHospitalForm, contact: e.target.value })} required />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <input className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2" placeholder="Latitude" value={managerHospitalForm.latitude} onChange={(e) => setManagerHospitalForm({ ...managerHospitalForm, latitude: e.target.value })} required type="number" step="0.000001" />
-                <input className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2" placeholder="Longitude" value={managerHospitalForm.longitude} onChange={(e) => setManagerHospitalForm({ ...managerHospitalForm, longitude: e.target.value })} required type="number" step="0.000001" />
-              </div>
-              <button
-                type="button"
-                className="w-full py-2 bg-sky-600 hover:bg-sky-500 rounded-lg font-medium"
-                onClick={() => applyCurrentLocation('manager')}
-              >
-                Use Current Location
-              </button>
-              <LocationPickerMap
-                latitude={Number.isFinite(Number.parseFloat(managerHospitalForm.latitude)) ? Number.parseFloat(managerHospitalForm.latitude) : null}
-                longitude={Number.isFinite(Number.parseFloat(managerHospitalForm.longitude)) ? Number.parseFloat(managerHospitalForm.longitude) : null}
-                onPick={(lat, lng) =>
-                  setManagerHospitalForm((prev) => ({
-                    ...prev,
-                    latitude: toCoordString(lat),
-                    longitude: toCoordString(lng),
-                  }))
-                }
-              />
-              <p className="text-xs text-gray-400">Click on the map to set hospital latitude and longitude.</p>
-              <div className="grid grid-cols-2 gap-2">
-                <input className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2" placeholder="Manager username" value={managerHospitalForm.manager_username} onChange={(e) => setManagerHospitalForm({ ...managerHospitalForm, manager_username: e.target.value })} required />
-                <input className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2" placeholder="Manager password" value={managerHospitalForm.manager_password} onChange={(e) => setManagerHospitalForm({ ...managerHospitalForm, manager_password: e.target.value })} required type="password" />
-              </div>
-              <button disabled={isLoading} className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg font-medium disabled:opacity-60">
-                Save Hospital
-              </button>
-            </form>
-          </section>
-
-          <section className="bg-gray-900/60 border border-gray-700 rounded-2xl p-4">
-            <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
-              <UserRoundCog size={18} />
-              Manager: Register Doctor
-            </h3>
-            <form className="space-y-2" onSubmit={handleRegisterDoctor}>
-              <div className="grid grid-cols-2 gap-2">
-                <input className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2" placeholder="Hospital ID" value={doctorForm.hospital_id} onChange={(e) => setDoctorForm({ ...doctorForm, hospital_id: e.target.value })} required type="number" min={1} />
-                <input className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2" placeholder="Manager username" value={doctorForm.manager_username} onChange={(e) => setDoctorForm({ ...doctorForm, manager_username: e.target.value })} required />
-              </div>
-              <input className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2" placeholder="Doctor name" value={doctorForm.name} onChange={(e) => setDoctorForm({ ...doctorForm, name: e.target.value })} required />
-              <div className="grid grid-cols-2 gap-2">
-                <input className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2" placeholder="Specialization" value={doctorForm.specialization} onChange={(e) => setDoctorForm({ ...doctorForm, specialization: e.target.value })} required />
-                <input className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2" placeholder="Contact" value={doctorForm.contact} onChange={(e) => setDoctorForm({ ...doctorForm, contact: e.target.value })} required />
-              </div>
-              <textarea className="w-full h-28 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-xs" value={doctorForm.availability} onChange={(e) => setDoctorForm({ ...doctorForm, availability: e.target.value })} />
-              <div className="grid grid-cols-2 gap-2">
-                <input className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2" placeholder="Doctor username" value={doctorForm.username} onChange={(e) => setDoctorForm({ ...doctorForm, username: e.target.value })} required />
-                <input className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2" placeholder="Doctor password" value={doctorForm.password} onChange={(e) => setDoctorForm({ ...doctorForm, password: e.target.value })} required type="password" />
-              </div>
-              <button disabled={isLoading} className="w-full py-2 bg-amber-600 hover:bg-amber-500 rounded-lg font-medium disabled:opacity-60">
-                Save Doctor
-              </button>
-            </form>
-          </section>
-
-          <section className="bg-gray-900/60 border border-gray-700 rounded-2xl p-4 space-y-3">
-            <h3 className="text-lg font-semibold text-white">Manager Parameters and Values</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm">
-              <div className="bg-gray-800/60 border border-gray-700 rounded-lg p-3">
-                <div className="text-gray-400">Hospital ID</div>
-                <div className="text-white">{doctorForm.hospital_id || '-'}</div>
-              </div>
-              <div className="bg-gray-800/60 border border-gray-700 rounded-lg p-3">
-                <div className="text-gray-400">Doctor Name</div>
-                <div className="text-white">{doctorForm.name || '-'}</div>
-              </div>
-              <div className="bg-gray-800/60 border border-gray-700 rounded-lg p-3">
-                <div className="text-gray-400">Specialization</div>
-                <div className="text-white">{doctorForm.specialization || '-'}</div>
-              </div>
-            </div>
-          </section>
-
-          <section className="bg-gray-900/60 border border-gray-700 rounded-2xl p-4 space-y-3">
-            <h3 className="text-lg font-semibold text-white flex items-center gap-2">
-              <Stethoscope size={18} />
-              Manager: View Appointments
-            </h3>
-            <div className="flex gap-2">
-              <input className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2" placeholder="Manager username" value={managerUsernameLookup} onChange={(e) => setManagerUsernameLookup(e.target.value)} />
-              <button onClick={handleViewManagerAppointments} className="px-4 bg-amber-600 hover:bg-amber-500 rounded-lg">Load</button>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-gray-400 border-b border-gray-700">
-                    <th className="py-2">Patient</th>
-                    <th className="py-2">Doctor</th>
-                    <th className="py-2">Hospital</th>
-                    <th className="py-2">Date</th>
-                    <th className="py-2">Time</th>
-                    <th className="py-2">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {managerAppointments.map((appt) => (
-                    <tr key={appt.id} className="border-b border-gray-800 text-gray-200">
-                      <td className="py-2">{appt.patient_name}</td>
-                      <td className="py-2">{appt.doctor_name}</td>
-                      <td className="py-2">{appt.hospital_name}</td>
-                      <td className="py-2">{appt.appointment_date}</td>
-                      <td className="py-2">{appt.appointment_time}</td>
-                      <td className="py-2 capitalize">{appt.status}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {managerAppointments.length === 0 && <p className="text-sm text-gray-500 mt-2">No appointments to show.</p>}
-            </div>
-          </section>
-        </>
       )}
 
       {selectedRole === 'patient' && (

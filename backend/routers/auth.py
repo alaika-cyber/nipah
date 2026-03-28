@@ -8,6 +8,7 @@ from services.database_service import (
     approve_manager_request,
     list_pending_manager_requests,
     login_auth_user,
+    login_hospital_manager,
     register_auth_user,
 )
 
@@ -66,6 +67,24 @@ async def login(request: AuthRequest):
         raise HTTPException(status_code=403, detail="Manager account is pending admin approval")
 
     return {"message": "Login successful", "user": user}
+
+
+class HospitalLoginRequest(BaseModel):
+    username: str = Field(..., min_length=4, max_length=120)
+    password: str = Field(..., min_length=6, max_length=120)
+
+
+@router.post("/hospital/login")
+async def hospital_login(request: HospitalLoginRequest):
+    user = login_hospital_manager(
+        db_path=settings.SQLITE_DB_PATH,
+        username=request.username,
+        password=request.password,
+    )
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid hospital manager credentials")
+
+    return {"message": "Hospital manager login successful", "user": user}
 
 
 @router.post("/admin/pending-managers")

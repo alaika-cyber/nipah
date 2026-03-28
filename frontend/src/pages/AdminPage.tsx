@@ -115,6 +115,8 @@ export default function AdminPage() {
         active_cases: Number.parseInt(form.active_cases, 10),
         deaths: Number.parseInt(form.deaths, 10),
         updated_by: form.updated_by || 'admin',
+        admin_email: adminEmail,
+        admin_password: adminPassword,
       });
       setMessage('State data updated successfully.');
       setForm({ ...form, state_name: '', active_cases: '', deaths: '' });

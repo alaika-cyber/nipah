@@ -274,8 +274,38 @@ def login_auth_user(db_path: str, role: str, email: str, password: str) -> dict[
 
 def _assert_admin_credentials(db_path: str, admin_email: str, admin_password: str) -> None:
     admin = login_auth_user(db_path, "admin", admin_email, admin_password)
-    if not admin or admin.get("status") != "approved":
+    if not admin:
         raise ValueError("Invalid admin credentials")
+
+
+def login_hospital_manager(db_path: str, username: str, password: str) -> dict[str, Any] | None:
+    normalized_username = username.strip().lower()
+
+    with _connect(db_path) as conn:
+        row = conn.execute(
+            """
+            SELECT id, name, manager_username
+            FROM hospitals
+            WHERE manager_username = ? AND manager_password = ?
+            """,
+            (normalized_username, _hash_password(password)),
+        ).fetchone()
+
+    if not row:
+        return None
+
+    return {
+        "id": int(row["id"]),
+        "hospital_name": str(row["name"]),
+        "manager_username": str(row["manager_username"]),
+        "role": "hospital_manager",
+    }
+
+
+def _assert_hospital_manager_credentials(db_path: str, username: str, password: str) -> None:
+    mgr = login_hospital_manager(db_path, username, password)
+    if not mgr:
+        raise ValueError("Invalid hospital manager credentials")
 
 
 def list_pending_manager_requests(
@@ -426,7 +456,7 @@ def create_hospital(
                 latitude,
                 longitude,
                 manager_username,
-                manager_password,
+                _hash_password(manager_password),
                 created_at,
             ),
         )
@@ -513,7 +543,7 @@ def create_doctor(
                 contact,
                 json.dumps(availability, separators=(",", ":")),
                 username,
-                password,
+                _hash_password(password),
                 created_at,
             ),
         )

@@ -26,11 +26,14 @@ class HospitalCreateRequest(BaseModel):
     longitude: float = Field(..., ge=-180, le=180)
     manager_username: str = Field(..., min_length=4, max_length=40)
     manager_password: str = Field(..., min_length=6, max_length=80)
+    admin_email: str = Field(..., min_length=5, max_length=120)
+    admin_password: str = Field(..., min_length=6, max_length=120)
 
 
 class DoctorCreateRequest(BaseModel):
     hospital_id: int = Field(..., ge=1)
     manager_username: str = Field(..., min_length=4, max_length=40)
+    manager_password: str = Field(..., min_length=6, max_length=80)
     name: str = Field(..., min_length=2, max_length=120)
     specialization: str = Field(..., min_length=2, max_length=120)
     contact: str = Field(..., min_length=5, max_length=80)
@@ -55,7 +58,13 @@ class AppointmentRequest(BaseModel):
 @router.post("/admin/hospitals")
 async def register_hospital(request: HospitalCreateRequest):
     """Admin registers a hospital and manager credentials."""
+    from services.database_service import _assert_admin_credentials
     try:
+        _assert_admin_credentials(
+            db_path=settings.SQLITE_DB_PATH,
+            admin_email=request.admin_email,
+            admin_password=request.admin_password,
+        )
         created = create_hospital(
             db_path=settings.SQLITE_DB_PATH,
             name=request.name,
@@ -75,6 +84,8 @@ async def register_hospital(request: HospitalCreateRequest):
                 "password": request.manager_password,
             },
         }
+    except ValueError as exc:
+        raise HTTPException(status_code=401, detail=str(exc))
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Failed to register hospital: {str(exc)}")
 
@@ -82,6 +93,16 @@ async def register_hospital(request: HospitalCreateRequest):
 @router.post("/manager/doctors")
 async def register_doctor(request: DoctorCreateRequest):
     """Hospital manager registers a doctor under their hospital."""
+    from services.database_service import _assert_hospital_manager_credentials
+    try:
+        _assert_hospital_manager_credentials(
+            db_path=settings.SQLITE_DB_PATH,
+            username=request.manager_username,
+            password=request.manager_password,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=401, detail=str(exc))
+
     hospitals = list_hospitals(settings.SQLITE_DB_PATH)
     match = next((h for h in hospitals if h["id"] == request.hospital_id), None)
     if not match:
@@ -192,8 +213,25 @@ async def book_appointment(request: AppointmentRequest):
         raise HTTPException(status_code=500, detail=f"Failed to book appointment: {str(exc)}")
 
 
-@router.get("/manager/appointments")
-async def get_manager_appointments(manager_username: str = Query(..., min_length=4, max_length=40)):
+class ManagerAppointmentsRequest(BaseModel):
+    manager_username: str = Field(..., min_length=4, max_length=40)
+    manager_password: str = Field(..., min_length=6, max_length=80)
+
+
+@router.post("/manager/appointments")
+async def get_manager_appointments(request: ManagerAppointmentsRequest):
     """Hospital manager dashboard to view appointments for their hospital."""
-    appointments = list_appointments_for_manager(settings.SQLITE_DB_PATH, manager_username=manager_username)
+    from services.database_service import _assert_hospital_manager_credentials
+    try:
+        _assert_hospital_manager_credentials(
+            db_path=settings.SQLITE_DB_PATH,
+            username=request.manager_username,
+            password=request.manager_password,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=401, detail=str(exc))
+
+    appointments = list_appointments_for_manager(
+        settings.SQLITE_DB_PATH, manager_username=request.manager_username
+    )
     return {"appointments": appointments, "total": len(appointments)}

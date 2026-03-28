@@ -161,7 +161,12 @@ export interface SlotResponse {
   available_slots: string[];
 }
 
-export interface HospitalCreateRequest {
+export interface HospitalCreateRequest extends HospitalBaseCreateRequest {
+  admin_email: string;
+  admin_password: string;
+}
+
+export interface HospitalBaseCreateRequest {
   name: string;
   address: string;
   city: string;
@@ -175,6 +180,7 @@ export interface HospitalCreateRequest {
 export interface DoctorCreateRequest {
   hospital_id: number;
   manager_username: string;
+  manager_password: string;
   name: string;
   specialization: string;
   contact: string;
@@ -235,12 +241,11 @@ export async function bookAppointment(payload: AppointmentCreateRequest) {
   return data;
 }
 
-export async function getManagerAppointments(
-  managerUsername: string
-): Promise<{ appointments: Appointment[]; total: number }> {
-  const { data } = await api.get('/hospital-booking/manager/appointments', {
-    params: { manager_username: managerUsername },
-  });
+export async function getManagerAppointments(payload: {
+  manager_username: string;
+  manager_password: string;
+}): Promise<{ appointments: Appointment[]; total: number }> {
+  const { data } = await api.post('/hospital-booking/manager/appointments', payload);
   return data;
 }
 
@@ -266,6 +271,8 @@ export interface StateStatUpdateRequest {
   active_cases: number;
   deaths: number;
   updated_by: string;
+  admin_email: string;
+  admin_password: string;
 }
 
 export async function upsertStateStats(payload: StateStatUpdateRequest) {
@@ -307,6 +314,11 @@ export async function authLogin(payload: AuthPayload) {
 export async function authSignup(payload: AuthPayload) {
   const { data } = await api.post('/auth/signup', payload);
   return data;
+}
+
+export async function hospitalLogin(payload: { username: string; password: string }) {
+  const { data } = await api.post('/auth/hospital/login', payload);
+  return data as { message: string; user: { id: number; hospital_name: string; manager_username: string; role: string } };
 }
 
 export async function getPendingManagerRequests(adminEmail: string, adminPassword: string) {

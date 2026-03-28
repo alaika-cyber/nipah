@@ -14,12 +14,20 @@ class StateStatUpdateRequest(BaseModel):
     active_cases: int = Field(..., ge=0)
     deaths: int = Field(..., ge=0)
     updated_by: str = Field(default="admin", min_length=3, max_length=80)
+    admin_email: str = Field(..., min_length=5, max_length=120)
+    admin_password: str = Field(..., min_length=6, max_length=120)
 
 
 @router.post("/admin/state-stats")
 async def update_state_stats(request: StateStatUpdateRequest):
     """Admin updates active case and death statistics for a state."""
+    from services.database_service import _assert_admin_credentials
     try:
+        _assert_admin_credentials(
+            db_path=settings.SQLITE_DB_PATH,
+            admin_email=request.admin_email,
+            admin_password=request.admin_password,
+        )
         result = upsert_state_stat(
             db_path=settings.SQLITE_DB_PATH,
             state_name=request.state_name,
