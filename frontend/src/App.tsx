@@ -1,13 +1,15 @@
-import { AlertTriangle, User, Briefcase, ShieldAlert } from 'lucide-react';
+import { AlertTriangle, User, Briefcase, ShieldAlert, Map } from 'lucide-react';
 import { Routes, Route, NavLink } from 'react-router-dom';
 import UserPage from './pages/UserPage';
 import ManagerPage from './pages/ManagerPage';
 import AdminPage from './pages/AdminPage';
+import ZonesPage from './pages/ZonesPage';
 
 const NAV_LINKS = [
   { to: '/', label: 'User', icon: <User size={18} /> },
   { to: '/manager', label: 'Manager', icon: <Briefcase size={18} /> },
   { to: '/admin', label: 'Admin', icon: <ShieldAlert size={18} /> },
+  { to: '/zones', label: 'Zones Map', icon: <Map size={18} /> },
 ];
 
 function App() {
@@ -69,6 +71,7 @@ function App() {
           <Route path="/" element={<UserPage />} />
           <Route path="/manager" element={<ManagerPage />} />
           <Route path="/admin" element={<AdminPage />} />
+          <Route path="/zones" element={<ZonesPage />} />
         </Routes>
       </main>
 
