@@ -11,6 +11,7 @@ class Settings:
 
     # LLM Configuration
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
+    LLM_BASE_URL: str | None = os.getenv("LLM_BASE_URL")
     LLM_MODEL: str = os.getenv("LLM_MODEL", "gpt-3.5-turbo")
 
     # CORS

@@ -223,11 +223,19 @@ def _get_fallback_response(message: str) -> str:
 
 async def get_chat_response(message: str, conversation_history: list[dict] | None = None) -> str:
     """Get a response from the LLM or fallback knowledge base."""
-    if not settings.OPENAI_API_KEY:
+    # If neither API key nor Local Base URL is provided, fallback to knowledge base
+    if not settings.OPENAI_API_KEY and not settings.LLM_BASE_URL:
         return _get_fallback_response(message)
 
     try:
-        client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+        # Provide a dummy key if using a local model without an API key
+        api_key = settings.OPENAI_API_KEY or "local-model-dummy-key"
+        
+        client_kwargs = {"api_key": api_key}
+        if settings.LLM_BASE_URL:
+            client_kwargs["base_url"] = settings.LLM_BASE_URL
+            
+        client = AsyncOpenAI(**client_kwargs)
 
         messages = [{"role": "system", "content": SYSTEM_PROMPT}]
 
