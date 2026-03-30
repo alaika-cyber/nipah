@@ -45,6 +45,21 @@ class DoctorCreateRequest(BaseModel):
     password: str = Field(..., min_length=6, max_length=80)
 
 
+class AdminDoctorCreateRequest(BaseModel):
+    hospital_id: int = Field(..., ge=1)
+    admin_email: str = Field(..., min_length=5, max_length=120)
+    admin_password: str = Field(..., min_length=6, max_length=120)
+    name: str = Field(..., min_length=2, max_length=120)
+    specialization: str = Field(..., min_length=2, max_length=120)
+    contact: str = Field(..., min_length=5, max_length=80)
+    availability: dict[str, list[str]] = Field(
+        ...,
+        description="Weekly schedule, e.g. {\"Monday\": [\"10:00\", \"11:00\"]}",
+    )
+    username: str = Field(..., min_length=4, max_length=40)
+    password: str = Field(..., min_length=6, max_length=80)
+
+
 class AppointmentRequest(BaseModel):
     patient_name: str = Field(..., min_length=2, max_length=120)
     patient_contact: str = Field(..., min_length=5, max_length=80)
@@ -109,6 +124,49 @@ async def register_doctor(request: DoctorCreateRequest):
         raise HTTPException(status_code=404, detail="Hospital not found")
     if match["manager_username"] != request.manager_username:
         raise HTTPException(status_code=403, detail="Manager is not authorized for this hospital")
+
+    try:
+        created = create_doctor(
+            db_path=settings.SQLITE_DB_PATH,
+            hospital_id=request.hospital_id,
+            name=request.name,
+            specialization=request.specialization,
+            contact=request.contact,
+            availability=request.availability,
+            username=request.username,
+            password=request.password,
+        )
+        return {
+            "message": "Doctor registered successfully",
+            "doctor": created,
+            "doctor_credentials": {
+                "username": request.username,
+                "password": request.password,
+            },
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to register doctor: {str(exc)}")
+
+
+@router.post("/admin/doctors")
+async def register_doctor_as_admin(request: AdminDoctorCreateRequest):
+    """Admin registers a doctor under any hospital without needing manager credentials."""
+    from services.database_service import _assert_admin_credentials
+    try:
+        _assert_admin_credentials(
+            db_path=settings.SQLITE_DB_PATH,
+            admin_email=request.admin_email,
+            admin_password=request.admin_password,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=401, detail=str(exc))
+
+    hospitals = list_hospitals(settings.SQLITE_DB_PATH)
+    match = next((h for h in hospitals if h["id"] == request.hospital_id), None)
+    if not match:
+        raise HTTPException(status_code=404, detail="Hospital not found")
 
     try:
         created = create_doctor(

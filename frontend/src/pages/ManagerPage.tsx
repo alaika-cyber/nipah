@@ -1,10 +1,14 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { Activity, AlertOctagon, CircleCheckBig, Flame, LogIn, LogOut, UserPlus } from 'lucide-react';
+import { Activity, AlertOctagon, CircleCheckBig, Flame, LogIn, LogOut, UserPlus, Stethoscope, PlusCircle } from 'lucide-react';
 import {
   authLogin,
   authSignup,
   getStateStats,
   getZoneSummary,
+  getHospitals,
+  getDoctorsByHospital,
+  registerDoctor,
+  type Doctor,
   type StateStat,
   type ZoneSummary,
 } from '../services/api';
@@ -26,6 +30,13 @@ export default function ManagerPage() {
   const [summary, setSummary] = useState<ZoneSummary | null>(null);
   const maxCases = useMemo(() => Math.max(1, ...states.map((s) => s.active_cases)), [states]);
 
+  const [managerPassword, setManagerPassword] = useState('');
+  const [myHospitalId, setMyHospitalId] = useState<number | null>(null);
+  const [doctors, setDoctors] = useState<Doctor[]>([]);
+  const [doctorForm, setDoctorForm] = useState({
+    name: '', specialization: '', contact: '', username: '', password: ''
+  });
+
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
@@ -35,6 +46,20 @@ export default function ManagerPage() {
       const [stateRes, summaryRes] = await Promise.all([getStateStats(), getZoneSummary()]);
       setStates(stateRes.states);
       setSummary(summaryRes);
+      
+      if (myHospitalId) {
+        const docs = await getDoctorsByHospital(myHospitalId);
+        setDoctors(docs.doctors);
+      } else if (authenticated) {
+        // Fallback fetch if hospital wasn't resolved yet
+        const { hospitals } = await getHospitals();
+        const myHosp = hospitals.find(h => h.manager_username === email);
+        if (myHosp) {
+          setMyHospitalId(myHosp.id);
+          const docs = await getDoctorsByHospital(myHosp.id);
+          setDoctors(docs.doctors);
+        }
+      }
     } catch {
       /* silent */
     }
@@ -58,6 +83,7 @@ export default function ManagerPage() {
         await authLogin({ role: 'manager', email: authForm.email, password: authForm.password });
         setAuthenticated(true);
         setEmail(authForm.email);
+        setManagerPassword(authForm.password);
         setMessage('Login successful.');
       }
     } catch {
@@ -70,11 +96,48 @@ export default function ManagerPage() {
   const handleLogout = () => {
     setAuthenticated(false);
     setEmail('');
+    setManagerPassword('');
+    setMyHospitalId(null);
+    setDoctors([]);
     setAuthForm({ email: '', password: '' });
     setStates([]);
     setSummary(null);
     setMessage('');
     setError('');
+  };
+
+  const handleRegisterDoctor = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!myHospitalId) {
+      setError("Cannot register doctor: No hospital associated with this manager account.");
+      return;
+    }
+    setError(''); setMessage(''); setIsLoading(true);
+    
+    // Auto-generate Standard 9AM-5PM blocks for weekdays
+    const weekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+    const standardSlots = ["09:00", "10:00", "11:00", "13:00", "14:00", "15:00", "16:00"];
+    const defaultAvailability: Record<string, string[]> = {};
+    for (const day of weekdays) {
+      defaultAvailability[day] = [...standardSlots];
+    }
+
+    try {
+      await registerDoctor({
+        ...doctorForm,
+        hospital_id: myHospitalId,
+        manager_username: email,
+        manager_password: managerPassword,
+        availability: defaultAvailability
+      });
+      setMessage('Doctor registered successfully.');
+      setDoctorForm({ name: '', specialization: '', contact: '', username: '', password: '' });
+      await refresh();
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || 'Failed to register doctor.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   // --- LOGIN / SIGNUP VIEW ---
@@ -232,6 +295,63 @@ export default function ManagerPage() {
             ))}
           </tbody>
         </table>
+      </section>
+
+      {/* Doctor Registration & View */}
+      <section className="bg-gray-900/60 border border-gray-700 rounded-2xl p-4">
+        <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+          <Stethoscope size={18} />
+          Hospital Directory: Register Doctor
+        </h3>
+        
+        {!myHospitalId ? (
+          <div className="p-3 bg-amber-500/10 text-amber-300 rounded-lg text-sm border border-amber-500/20 mb-4">
+            No active hospital linked to this account yet. Tell an Admin to register your Hospital with the email: <strong>{email}</strong>
+          </div>
+        ) : (
+          <form className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3 mb-6" onSubmit={handleRegisterDoctor}>
+            <input className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white" placeholder="Dr. XYZ (Name)" value={doctorForm.name} onChange={(e) => setDoctorForm({...doctorForm, name: e.target.value})} required />
+            <input className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white" placeholder="Specialization (e.g. Virologist)" value={doctorForm.specialization} onChange={(e) => setDoctorForm({...doctorForm, specialization: e.target.value})} required />
+            <input className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white" placeholder="Contact Details" value={doctorForm.contact} onChange={(e) => setDoctorForm({...doctorForm, contact: e.target.value})} required />
+            <input className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white" placeholder="Doctor Username" value={doctorForm.username} onChange={(e) => setDoctorForm({...doctorForm, username: e.target.value})} required />
+            <input className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white" placeholder="Doctor Password" type="password" minLength={6} value={doctorForm.password} onChange={(e) => setDoctorForm({...doctorForm, password: e.target.value})} required />
+            <button disabled={isLoading} className="lg:col-span-5 bg-amber-600 hover:bg-amber-500 rounded-lg font-medium disabled:opacity-60 text-white py-2 flex items-center justify-center gap-2 cursor-pointer transition-colors">
+              <PlusCircle size={18} />
+              Register Expected Doctor (Standard 9-5 Schedule)
+            </button>
+          </form>
+        )}
+
+        <h4 className="text-md font-semibold text-gray-300 mb-2">Registered Doctors at this Hospital</h4>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[700px]">
+            <thead>
+              <tr className="border-b border-gray-700 text-left text-gray-400">
+                <th className="py-2">Name</th>
+                <th className="py-2">Specialization</th>
+                <th className="py-2">Contact</th>
+                <th className="py-2">System Username</th>
+                <th className="py-2">Registered On</th>
+              </tr>
+            </thead>
+            <tbody>
+              {doctors.map((d) => (
+                <tr key={d.id} className="border-b border-gray-800 text-gray-200">
+                  <td className="py-2 font-medium">{d.name}</td>
+                  <td className="py-2">{d.specialization}</td>
+                  <td className="py-2">{d.contact}</td>
+                  <td className="py-2">{d.username}</td>
+                  <td className="py-2">{new Date(d.created_at).toLocaleDateString()}</td>
+                </tr>
+              ))}
+              {doctors.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="py-4 text-center text-gray-500">No doctors registered yet.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </section>
     </div>
   );

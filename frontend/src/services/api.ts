@@ -189,6 +189,18 @@ export interface DoctorCreateRequest {
   password: string;
 }
 
+export interface AdminDoctorCreateRequest {
+  hospital_id: number;
+  admin_email: string;
+  admin_password: string;
+  name: string;
+  specialization: string;
+  contact: string;
+  availability: Record<string, string[]>;
+  username: string;
+  password: string;
+}
+
 export interface AppointmentCreateRequest {
   patient_name: string;
   patient_contact: string;
@@ -206,6 +218,11 @@ export async function registerHospital(payload: HospitalCreateRequest) {
 
 export async function registerDoctor(payload: DoctorCreateRequest) {
   const { data } = await api.post('/hospital-booking/manager/doctors', payload);
+  return data;
+}
+
+export async function adminRegisterDoctor(payload: AdminDoctorCreateRequest) {
+  const { data } = await api.post('/hospital-booking/admin/doctors', payload);
   return data;
 }
 
