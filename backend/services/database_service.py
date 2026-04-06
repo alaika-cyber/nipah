@@ -7,6 +7,7 @@ import math
 import os
 import sqlite3
 import hashlib
+import bcrypt
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Any, Iterator
@@ -174,11 +175,18 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 
 
 def _compute_zone(active_cases: int, deaths: int) -> str:
-    severity_score = active_cases + (deaths * 2)
-    if severity_score >= 100 or deaths >= 20:
+    # High-fatality viruses like Nipah require aggressive containment.
+    # We weight deaths heavily and lower thresholds to ensure safety.
+    severity_score = active_cases + (deaths * 5)
+    
+    # Red (Critical): Significant outbreak or multiple fatalities.
+    if severity_score >= 50 or deaths >= 5 or active_cases >= 30:
         return "Red"
-    if severity_score >= 25 or deaths >= 5:
+        
+    # Orange (Warning): Initial cases or single fatality.
+    if severity_score >= 10 or deaths >= 1 or active_cases >= 5:
         return "Orange"
+        
     return "Green"
 
 
@@ -202,11 +210,23 @@ def seed_default_auth_users(
             if not email or not password:
                 continue
 
-            exists = conn.execute(
-                "SELECT id FROM auth_users WHERE role = ? AND email = ?",
+            row = conn.execute(
+                "SELECT id, password_hash FROM auth_users WHERE role = ? AND email = ?",
                 (role, email),
             ).fetchone()
-            if exists:
+            
+            if row:
+                # If legacy bcrypt hash matches default credentials, migrate to sha256
+                stored_hash = row["password_hash"]
+                if stored_hash.startswith("$2"):
+                    try:
+                        if bcrypt.checkpw(password.encode("utf-8"), stored_hash.encode("utf-8")):
+                            conn.execute(
+                                "UPDATE auth_users SET password_hash = ? WHERE id = ?",
+                                (_hash_password(password), row["id"]),
+                            )
+                    except Exception:
+                        pass
                 continue
 
             conn.execute(
@@ -255,14 +275,37 @@ def login_auth_user(db_path: str, role: str, email: str, password: str) -> dict[
     with _connect(db_path) as conn:
         row = conn.execute(
             """
-            SELECT role, email, status
+            SELECT id, role, email, status, password_hash
             FROM auth_users
-            WHERE role = ? AND email = ? AND password_hash = ?
+            WHERE role = ? AND email = ?
             """,
-            (normalized_role, normalized_email, _hash_password(password)),
+            (normalized_role, normalized_email),
         ).fetchone()
 
     if not row:
+        return None
+
+    stored_hash = row["password_hash"]
+    current_hash = _hash_password(password)
+
+    authenticated = False
+    if stored_hash == current_hash:
+        authenticated = True
+    elif stored_hash.startswith("$2"):
+        # Support migration from legacy bcrypt hashes
+        try:
+            if bcrypt.checkpw(password.encode("utf-8"), stored_hash.encode("utf-8")):
+                authenticated = True
+                # Auto-migrate to sha256 for future performance
+                with _connect(db_path) as conn_update:
+                    conn_update.execute(
+                        "UPDATE auth_users SET password_hash = ? WHERE id = ?",
+                        (current_hash, row["id"]),
+                    )
+        except Exception:
+            pass
+
+    if not authenticated:
         return None
 
     return {
@@ -441,7 +484,31 @@ def create_hospital(
     manager_password: str,
 ) -> dict[str, Any]:
     created_at = _now_iso()
+    normalized_manager = manager_username.strip().lower()
+    pw_hash = _hash_password(manager_password)
+
     with _connect(db_path) as conn:
+        # 1. Ensure manager is registered in central auth_users for dashboard login
+        existing_auth = conn.execute(
+            "SELECT id FROM auth_users WHERE role = 'manager' AND email = ?",
+            (normalized_manager,),
+        ).fetchone()
+
+        if existing_auth:
+            conn.execute(
+                "UPDATE auth_users SET password_hash = ?, status = 'approved' WHERE id = ?",
+                (pw_hash, existing_auth["id"]),
+            )
+        else:
+            conn.execute(
+                """
+                INSERT INTO auth_users (role, email, password_hash, status, created_at)
+                VALUES ('manager', ?, ?, 'approved', ?)
+                """,
+                (normalized_manager, pw_hash, created_at),
+            )
+
+        # 2. Register the hospital linked to this manager
         cur = conn.execute(
             """
             INSERT INTO hospitals
@@ -455,8 +522,8 @@ def create_hospital(
                 contact,
                 latitude,
                 longitude,
-                manager_username,
-                _hash_password(manager_password),
+                normalized_manager,
+                pw_hash,
                 created_at,
             ),
         )
@@ -470,7 +537,7 @@ def create_hospital(
         "contact": contact,
         "latitude": latitude,
         "longitude": longitude,
-        "manager_username": manager_username,
+        "manager_username": normalized_manager,
         "created_at": created_at,
     }
 

@@ -10,6 +10,7 @@ const STATE_COORDINATES: Record<string, [number, number]> = {
   'Tamil Nadu': [11.1271, 78.6569],
   'Maharashtra': [19.7515, 75.7139],
   'Andhra Pradesh': [15.9129, 79.7400],
+  'Telangana': [18.1124, 79.0193],
   'Delhi': [28.7041, 77.1025],
   'Gujarat': [22.2587, 71.1924],
   'West Bengal': [22.9868, 87.8550],
@@ -18,7 +19,15 @@ const STATE_COORDINATES: Record<string, [number, number]> = {
   'Madhya Pradesh': [22.9734, 78.6569],
   'Bihar': [25.0961, 85.3131],
   'Punjab': [31.1471, 75.3412],
-  'Haryana': [29.0588, 76.0856]
+  'Haryana': [29.0588, 76.0856],
+  'Odisha': [20.9517, 85.0985],
+  'Assam': [26.2006, 92.9376],
+  'Chhattisgarh': [21.2787, 81.8661],
+  'Jharkhand': [23.6102, 85.2799],
+  'Uttarakhand': [30.0668, 79.0193],
+  'Himachal Pradesh': [31.1048, 77.1734],
+  'Jammu and Kashmir': [33.7782, 76.5762],
+  'Goa': [15.2993, 74.1240]
 };
 
 const DEFAULT_CENTER: [number, number] = [20.5937, 78.9629]; // Center of India
@@ -72,11 +81,20 @@ export default function ZonesPage() {
             className="map-tiles"
           />
           
-          {states.map((state) => {
-            const coords = STATE_COORDINATES[state.state_name] || DEFAULT_CENTER;
+          {states.map((state, index) => {
+            const hasCoords = !!STATE_COORDINATES[state.state_name];
+            let coords = STATE_COORDINATES[state.state_name] || DEFAULT_CENTER;
+            
+            // For unknown states, add a small jitter so they don't stack perfectly in the center
+            if (!hasCoords) {
+              const jitterLat = (Math.sin(index) * 0.5);
+              const jitterLng = (Math.cos(index) * 0.5);
+              coords = [DEFAULT_CENTER[0] + jitterLat, DEFAULT_CENTER[1] + jitterLng];
+            }
+
             const color = getZoneColor(state.zone);
-            // Size of bubble based on cases relative to maxCases (minimum radius of 8)
-            const radius = Math.max(8, (state.active_cases / maxCases) * 24);
+            // Size of bubble based on cases relative to maxCases (minimum radius of 10)
+            const radius = Math.max(10, (state.active_cases / maxCases) * 30);
             
             return (
               <CircleMarker 
@@ -87,11 +105,15 @@ export default function ZonesPage() {
                   fillColor: color,
                   fillOpacity: 0.6,
                   color: color,
-                  weight: 2
+                  weight: hasCoords ? 2 : 1,
+                  dashArray: hasCoords ? undefined : "5, 5"
                 }}
               >
                 <Tooltip direction="top" offset={[0, -10]} opacity={1}>
-                  <div className="font-semibold">{state.state_name} ({state.zone} Zone)</div>
+                  <div className="font-semibold">
+                    {state.state_name} ({state.zone} Zone)
+                    {!hasCoords && <div className="text-[10px] text-amber-500 italic mt-0.5">Unknown Location (Position Estimated)</div>}
+                  </div>
                 </Tooltip>
                 <Popup>
                   <div className="text-sm font-sans min-w-[150px]">
