@@ -1,36 +1,10 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Activity, AlertOctagon, Flame, CircleCheckBig } from 'lucide-react';
-import { MapContainer, TileLayer, CircleMarker, Tooltip, Popup } from 'react-leaflet';
+import { MapContainer, TileLayer, GeoJSON } from 'react-leaflet';
 import { getStateStats, getZoneSummary, type StateStat, type ZoneSummary } from '../services/api';
 
-// Map of state names to [lat, lng] coordinates
-const STATE_COORDINATES: Record<string, [number, number]> = {
-  'Kerala': [10.8505, 76.2711],
-  'Karnataka': [15.3173, 75.7139],
-  'Tamil Nadu': [11.1271, 78.6569],
-  'Maharashtra': [19.7515, 75.7139],
-  'Andhra Pradesh': [15.9129, 79.7400],
-  'Telangana': [18.1124, 79.0193],
-  'Delhi': [28.7041, 77.1025],
-  'Gujarat': [22.2587, 71.1924],
-  'West Bengal': [22.9868, 87.8550],
-  'Uttar Pradesh': [26.8467, 80.9462],
-  'Rajasthan': [27.0238, 74.2179],
-  'Madhya Pradesh': [22.9734, 78.6569],
-  'Bihar': [25.0961, 85.3131],
-  'Punjab': [31.1471, 75.3412],
-  'Haryana': [29.0588, 76.0856],
-  'Odisha': [20.9517, 85.0985],
-  'Assam': [26.2006, 92.9376],
-  'Chhattisgarh': [21.2787, 81.8661],
-  'Jharkhand': [23.6102, 85.2799],
-  'Uttarakhand': [30.0668, 79.0193],
-  'Himachal Pradesh': [31.1048, 77.1734],
-  'Jammu and Kashmir': [33.7782, 76.5762],
-  'Goa': [15.2993, 74.1240]
-};
-
-const DEFAULT_CENTER: [number, number] = [20.5937, 78.9629]; // Center of India
+// Default center of India
+const DEFAULT_CENTER: [number, number] = [20.5937, 78.9629];
 
 function zoneStyles(zone: 'Red' | 'Orange' | 'Green') {
   if (zone === 'Red') return 'bg-red-500/15 border-red-500/40 text-red-300';
@@ -47,14 +21,81 @@ function getZoneColor(zone: 'Red' | 'Orange' | 'Green') {
 export default function ZonesPage() {
   const [states, setStates] = useState<StateStat[]>([]);
   const [summary, setSummary] = useState<ZoneSummary | null>(null);
-  const maxCases = useMemo(() => Math.max(1, ...states.map((s) => s.active_cases)), [states]);
+  const [geoData, setGeoData] = useState<any>(null);
+  const maxCases = useMemo(() => Math.max(1, ...states.map((s: StateStat) => s.active_cases)), [states]);
 
   useEffect(() => {
     Promise.all([getStateStats(), getZoneSummary()]).then(([stateRes, summaryRes]) => {
       setStates(stateRes.states);
       setSummary(summaryRes);
     });
+
+    fetch('https://raw.githubusercontent.com/geohacker/india/master/state/india_state.geojson')
+      .then(res => res.json())
+      .then(data => setGeoData(data))
+      .catch(err => console.error("GeoJSON Load Error:", err));
   }, []);
+
+  const getStyle = (feature: any) => {
+    const geoStateName = feature.properties.ST_NM || feature.properties.NAME || "";
+    // Case-insensitive match for state names
+    const stateData = states.find(s => s.state_name.toLowerCase() === geoStateName.toLowerCase());
+    const zone = stateData ? stateData.zone : 'Green';
+    
+    return {
+      fillColor: getZoneColor(zone),
+      weight: 1.5,
+      opacity: 1,
+      color: 'white',
+      fillOpacity: 0.6,
+    };
+  };
+
+  const onEachFeature = (feature: any, layer: any) => {
+    const geoStateName = feature.properties.ST_NM || feature.properties.NAME || "";
+    const state = states.find(s => s.state_name.toLowerCase() === geoStateName.toLowerCase());
+    
+    if (state) {
+      layer.bindTooltip(`<strong>${state.state_name}</strong>: ${state.zone} Zone`, {
+        sticky: true,
+        direction: 'top',
+        className: 'custom-tooltip'
+      });
+
+      layer.bindPopup(`
+        <div class="text-sm font-sans min-w-[150px]">
+          <h4 class="font-bold border-b pb-1 mb-2">${state.state_name}</h4>
+          <div class="flex justify-between mb-1">
+            <span class="text-gray-600">Active Cases:</span>
+            <span class="font-bold text-gray-900">${state.active_cases}</span>
+          </div>
+          <div class="flex justify-between mb-1">
+            <span class="text-gray-600">Deaths:</span>
+            <span class="font-bold text-red-600">${state.deaths}</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-gray-600">Zone Level:</span>
+            <span class="font-bold ${state.zone === 'Red' ? 'text-red-500' : state.zone === 'Orange' ? 'text-orange-500' : 'text-emerald-500'}">
+              ${state.zone}
+            </span>
+          </div>
+        </div>
+      `);
+    } else {
+      layer.bindTooltip(`<strong>${geoStateName}</strong>: No Data`, { sticky: true });
+    }
+    
+    layer.on({
+      mouseover: (e: any) => {
+        const l = e.target;
+        l.setStyle({ fillOpacity: 0.8, weight: 2 });
+      },
+      mouseout: (e: any) => {
+        const l = e.target;
+        l.setStyle({ fillOpacity: 0.6, weight: 1.5 });
+      }
+    });
+  };
 
   return (
     <div className="space-y-6">
@@ -81,62 +122,13 @@ export default function ZonesPage() {
             className="map-tiles"
           />
           
-          {states.map((state, index) => {
-            const hasCoords = !!STATE_COORDINATES[state.state_name];
-            let coords = STATE_COORDINATES[state.state_name] || DEFAULT_CENTER;
-            
-            // For unknown states, add a small jitter so they don't stack perfectly in the center
-            if (!hasCoords) {
-              const jitterLat = (Math.sin(index) * 0.5);
-              const jitterLng = (Math.cos(index) * 0.5);
-              coords = [DEFAULT_CENTER[0] + jitterLat, DEFAULT_CENTER[1] + jitterLng];
-            }
-
-            const color = getZoneColor(state.zone);
-            // Size of bubble based on cases relative to maxCases (minimum radius of 10)
-            const radius = Math.max(10, (state.active_cases / maxCases) * 30);
-            
-            return (
-              <CircleMarker 
-                key={state.state_name}
-                center={coords}
-                radius={radius}
-                pathOptions={{
-                  fillColor: color,
-                  fillOpacity: 0.6,
-                  color: color,
-                  weight: hasCoords ? 2 : 1,
-                  dashArray: hasCoords ? undefined : "5, 5"
-                }}
-              >
-                <Tooltip direction="top" offset={[0, -10]} opacity={1}>
-                  <div className="font-semibold">
-                    {state.state_name} ({state.zone} Zone)
-                    {!hasCoords && <div className="text-[10px] text-amber-500 italic mt-0.5">Unknown Location (Position Estimated)</div>}
-                  </div>
-                </Tooltip>
-                <Popup>
-                  <div className="text-sm font-sans min-w-[150px]">
-                    <h4 className="font-bold border-b pb-1 mb-2">{state.state_name}</h4>
-                    <div className="flex justify-between mb-1">
-                      <span className="text-gray-600">Active Cases:</span>
-                      <span className="font-bold text-gray-900">{state.active_cases}</span>
-                    </div>
-                    <div className="flex justify-between mb-1">
-                      <span className="text-gray-600">Deaths:</span>
-                      <span className="font-bold text-red-600">{state.deaths}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Zone Level:</span>
-                      <span className={`font-bold ${state.zone === 'Red' ? 'text-red-500' : state.zone === 'Orange' ? 'text-orange-500' : 'text-emerald-500'}`}>
-                        {state.zone}
-                      </span>
-                    </div>
-                  </div>
-                </Popup>
-              </CircleMarker>
-            );
-          })}
+          {geoData && (
+            <GeoJSON 
+              data={geoData} 
+              style={getStyle}
+              onEachFeature={onEachFeature}
+            />
+          )}
         </MapContainer>
       </section>
 
@@ -164,7 +156,7 @@ export default function ZonesPage() {
       <section className="bg-gray-900/60 border border-gray-700 rounded-2xl p-4">
         <h3 className="text-lg font-semibold text-white mb-3">Zone Progression</h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4">
-          {states.map((state) => (
+          {states.map((state: StateStat) => (
             <div key={state.state_name} className={`rounded-xl border px-3 py-2 ${zoneStyles(state.zone)}`}>
               <div className="text-sm font-semibold">{state.state_name}</div>
               <div className="text-xs">{state.zone} Zone</div>
@@ -173,7 +165,7 @@ export default function ZonesPage() {
           {states.length === 0 && <p className="text-sm text-gray-500">No state data available.</p>}
         </div>
         <div className="space-y-2">
-          {states.map((state) => (
+          {states.map((state: StateStat) => (
             <div key={`${state.state_name}-bar`} className="space-y-1">
               <div className="flex items-center justify-between text-xs text-gray-300">
                 <span>{state.state_name}</span>
@@ -205,7 +197,7 @@ export default function ZonesPage() {
             </tr>
           </thead>
           <tbody>
-            {states.map((state) => (
+            {states.map((state: StateStat) => (
               <tr key={state.state_name} className="border-b border-gray-800 text-gray-200">
                 <td className="py-2">{state.state_name}</td>
                 <td className="py-2">{state.active_cases}</td>

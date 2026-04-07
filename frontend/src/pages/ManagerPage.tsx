@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { Activity, AlertOctagon, CircleCheckBig, Flame, LogIn, LogOut, UserPlus, Stethoscope, PlusCircle } from 'lucide-react';
+import { useEffect, useMemo, useState, type FormEvent, type ChangeEvent } from 'react';
+import { Activity, AlertOctagon, CircleCheckBig, Flame, LogIn, LogOut, UserPlus, Stethoscope, PlusCircle, Calendar, User } from 'lucide-react';
 import {
   authLogin,
   authSignup,
@@ -8,9 +8,11 @@ import {
   getHospitals,
   getDoctorsByHospital,
   registerDoctor,
+  getManagerAppointments,
   type Doctor,
   type StateStat,
   type ZoneSummary,
+  type Appointment,
 } from '../services/api';
 
 function zoneStyles(zone: 'Red' | 'Orange' | 'Green') {
@@ -28,7 +30,7 @@ export default function ManagerPage() {
 
   const [states, setStates] = useState<StateStat[]>([]);
   const [summary, setSummary] = useState<ZoneSummary | null>(null);
-  const maxCases = useMemo(() => Math.max(1, ...states.map((s) => s.active_cases)), [states]);
+  const maxCases = useMemo(() => Math.max(1, ...states.map((s: StateStat) => s.active_cases)), [states]);
 
   const [managerPassword, setManagerPassword] = useState('');
   const [myHospitalId, setMyHospitalId] = useState<number | null>(null);
@@ -36,6 +38,7 @@ export default function ManagerPage() {
   const [doctorForm, setDoctorForm] = useState({
     name: '', specialization: '', contact: '', username: '', password: ''
   });
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
@@ -48,16 +51,24 @@ export default function ManagerPage() {
       setSummary(summaryRes);
       
       if (myHospitalId) {
-        const docs = await getDoctorsByHospital(myHospitalId);
+        const [docs, appts] = await Promise.all([
+          getDoctorsByHospital(myHospitalId),
+          getManagerAppointments({ manager_username: email, manager_password: managerPassword })
+        ]);
         setDoctors(docs.doctors);
+        setAppointments(appts.appointments);
       } else if (authenticated) {
         // Fallback fetch if hospital wasn't resolved yet
         const { hospitals } = await getHospitals();
-        const myHosp = hospitals.find(h => h.manager_username === email);
+        const myHosp = hospitals.find((h: any) => h.manager_username === email);
         if (myHosp) {
           setMyHospitalId(myHosp.id);
-          const docs = await getDoctorsByHospital(myHosp.id);
+          const [docs, appts] = await Promise.all([
+            getDoctorsByHospital(myHosp.id),
+            getManagerAppointments({ manager_username: email, manager_password: managerPassword })
+          ]);
           setDoctors(docs.doctors);
+          setAppointments(appts.appointments);
         }
       }
     } catch {
@@ -99,6 +110,7 @@ export default function ManagerPage() {
     setManagerPassword('');
     setMyHospitalId(null);
     setDoctors([]);
+    setAppointments([]);
     setAuthForm({ email: '', password: '' });
     setStates([]);
     setSummary(null);
@@ -165,7 +177,7 @@ export default function ManagerPage() {
               className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white focus:border-amber-500 focus:outline-none transition-colors"
               placeholder="manager@example.com"
               value={authForm.email}
-              onChange={(e) => setAuthForm({ ...authForm, email: e.target.value })}
+              onChange={(e: ChangeEvent<HTMLInputElement>) => setAuthForm({ ...authForm, email: e.target.value })}
               required
             />
           </div>
@@ -176,7 +188,7 @@ export default function ManagerPage() {
               className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white focus:border-amber-500 focus:outline-none transition-colors"
               placeholder="••••••••"
               value={authForm.password}
-              onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })}
+              onChange={(e: ChangeEvent<HTMLInputElement>) => setAuthForm({ ...authForm, password: e.target.value })}
               required
             />
           </div>
@@ -242,7 +254,7 @@ export default function ManagerPage() {
       <section className="bg-gray-900/60 border border-gray-700 rounded-2xl p-4">
         <h3 className="text-lg font-semibold text-white mb-3">Zone View</h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4">
-          {states.map((state) => (
+          {states.map((state: StateStat) => (
             <div key={state.state_name} className={`rounded-xl border px-3 py-2 ${zoneStyles(state.zone)}`}>
               <div className="text-sm font-semibold">{state.state_name}</div>
               <div className="text-xs">{state.zone} Zone</div>
@@ -251,7 +263,7 @@ export default function ManagerPage() {
           {states.length === 0 && <p className="text-sm text-gray-500">No state data available.</p>}
         </div>
         <div className="space-y-2">
-          {states.map((state) => (
+          {states.map((state: StateStat) => (
             <div key={`${state.state_name}-bar`} className="space-y-1">
               <div className="flex items-center justify-between text-xs text-gray-300">
                 <span>{state.state_name}</span>
@@ -282,7 +294,7 @@ export default function ManagerPage() {
             </tr>
           </thead>
           <tbody>
-            {states.map((state) => (
+            {states.map((state: StateStat) => (
               <tr key={state.state_name} className="border-b border-gray-800 text-gray-200">
                 <td className="py-2">{state.state_name}</td>
                 <td className="py-2">{state.active_cases}</td>
@@ -310,11 +322,11 @@ export default function ManagerPage() {
           </div>
         ) : (
           <form className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3 mb-6" onSubmit={handleRegisterDoctor}>
-            <input className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white" placeholder="Dr. XYZ (Name)" value={doctorForm.name} onChange={(e) => setDoctorForm({...doctorForm, name: e.target.value})} required />
-            <input className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white" placeholder="Specialization (e.g. Virologist)" value={doctorForm.specialization} onChange={(e) => setDoctorForm({...doctorForm, specialization: e.target.value})} required />
-            <input className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white" placeholder="Contact Details" value={doctorForm.contact} onChange={(e) => setDoctorForm({...doctorForm, contact: e.target.value})} required />
-            <input className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white" placeholder="Doctor Username" value={doctorForm.username} onChange={(e) => setDoctorForm({...doctorForm, username: e.target.value})} required />
-            <input className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white" placeholder="Doctor Password" type="password" minLength={6} value={doctorForm.password} onChange={(e) => setDoctorForm({...doctorForm, password: e.target.value})} required />
+            <input className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white" placeholder="Dr. XYZ (Name)" value={doctorForm.name} onChange={(e: ChangeEvent<HTMLInputElement>) => setDoctorForm({...doctorForm, name: e.target.value})} required />
+            <input className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white" placeholder="Specialization (e.g. Virologist)" value={doctorForm.specialization} onChange={(e: ChangeEvent<HTMLInputElement>) => setDoctorForm({...doctorForm, specialization: e.target.value})} required />
+            <input className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white" placeholder="Contact Details" value={doctorForm.contact} onChange={(e: ChangeEvent<HTMLInputElement>) => setDoctorForm({...doctorForm, contact: e.target.value})} required />
+            <input className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white" placeholder="Doctor Username" value={doctorForm.username} onChange={(e: ChangeEvent<HTMLInputElement>) => setDoctorForm({...doctorForm, username: e.target.value})} required />
+            <input className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white" placeholder="Doctor Password" type="password" minLength={6} value={doctorForm.password} onChange={(e: ChangeEvent<HTMLInputElement>) => setDoctorForm({...doctorForm, password: e.target.value})} required />
             <button disabled={isLoading} className="lg:col-span-5 bg-amber-600 hover:bg-amber-500 rounded-lg font-medium disabled:opacity-60 text-white py-2 flex items-center justify-center gap-2 cursor-pointer transition-colors">
               <PlusCircle size={18} />
               Register Expected Doctor (Standard 9-5 Schedule)
@@ -335,7 +347,7 @@ export default function ManagerPage() {
               </tr>
             </thead>
             <tbody>
-              {doctors.map((d) => (
+              {doctors.map((d: Doctor) => (
                 <tr key={d.id} className="border-b border-gray-800 text-gray-200">
                   <td className="py-2 font-medium">{d.name}</td>
                   <td className="py-2">{d.specialization}</td>
@@ -347,6 +359,74 @@ export default function ManagerPage() {
               {doctors.length === 0 && (
                 <tr>
                   <td colSpan={5} className="py-4 text-center text-gray-500">No doctors registered yet.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {/* Patient Appointments */}
+      <section className="bg-gray-900/60 border border-gray-700 rounded-2xl p-4">
+        <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+          <Calendar size={18} />
+          Patient Appointments
+        </h3>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[800px]">
+            <thead>
+              <tr className="border-b border-gray-700 text-left text-gray-400">
+                <th className="py-2">Patient</th>
+                <th className="py-2">Contact</th>
+                <th className="py-2">Doctor</th>
+                <th className="py-2">Date & Time</th>
+                <th className="py-2">Notes</th>
+                <th className="py-2">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {appointments.map((a: Appointment) => (
+                <tr key={a.id} className="border-b border-gray-800 text-gray-200">
+                  <td className="py-3">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center text-amber-500">
+                        <User size={14} />
+                      </div>
+                      <span className="font-medium">{a.patient_name}</span>
+                    </div>
+                  </td>
+                  <td className="py-3">{a.patient_contact}</td>
+                  <td className="py-3">
+                    <div className="text-white font-medium">{a.doctor_name}</div>
+                    <div className="text-xs text-gray-400">{a.specialization}</div>
+                  </td>
+                  <td className="py-3">
+                    <div className="text-amber-400">{a.appointment_date}</div>
+                    <div className="text-xs text-gray-400">{a.appointment_time}</div>
+                  </td>
+                  <td className="py-3">
+                    <p className="text-xs text-gray-400 max-w-[200px] truncate" title={a.notes || 'No notes'}>
+                      {a.notes || <span className="italic">No notes shared</span>}
+                    </p>
+                  </td>
+                  <td className="py-3">
+                    <span className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase ${
+                      a.status === 'Confirmed' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 
+                      'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                    }`}>
+                      {a.status}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+              {appointments.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="py-8 text-center text-gray-500">
+                    <div className="flex flex-col items-center gap-2">
+                      <Calendar size={24} className="opacity-20" />
+                      No appointments booked yet.
+                    </div>
+                  </td>
                 </tr>
               )}
             </tbody>

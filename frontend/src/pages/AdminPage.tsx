@@ -104,13 +104,6 @@ export default function AdminPage() {
     name: '', address: '', city: '', contact: '', latitude: '', longitude: '', manager_username: '', manager_password: ''
   });
 
-  // Doctor Registry
-  const [selectedHospitalId, setSelectedHospitalId] = useState<number | ''>('');
-  const [adminDoctors, setAdminDoctors] = useState<Doctor[]>([]);
-  const [doctorForm, setDoctorForm] = useState({
-    name: '', specialization: '', contact: '', username: '', password: ''
-  });
-
   const [isLoading, setIsLoading] = useState(false);
   const [isGeocoding, setIsGeocoding] = useState(false);
   const [error, setError] = useState('');
@@ -142,16 +135,6 @@ export default function AdminPage() {
       refreshPending();
     }
   }, [authenticated]);
-
-  useEffect(() => {
-    if (selectedHospitalId) {
-      getDoctorsByHospital(typeof selectedHospitalId === 'string' ? parseInt(selectedHospitalId) : selectedHospitalId)
-        .then(res => setAdminDoctors(res.doctors))
-        .catch(() => setAdminDoctors([]));
-    } else {
-      setAdminDoctors([]);
-    }
-  }, [selectedHospitalId]);
 
   const handleLogin = async (e: FormEvent) => {
     e.preventDefault();
@@ -313,82 +296,6 @@ export default function AdminPage() {
   };
 
   const handleRegisterHospital = async (e: FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setMessage('');
-    setIsLoading(true);
-    try {
-      await registerHospital({
-        ...hospitalForm,
-        latitude: parseFloat(hospitalForm.latitude),
-        longitude: parseFloat(hospitalForm.longitude),
-        admin_email: adminEmail,
-        admin_password: adminPassword
-      });
-      setMessage('Hospital registered successfully.');
-      setHospitalForm({ name: '', address: '', city: '', contact: '', latitude: '', longitude: '', manager_username: '', manager_password: '' });
-      await refresh();
-    } catch (err: any) {
-      if (err?.response?.data?.detail) {
-        const detail = err.response.data.detail;
-        if (Array.isArray(detail)) {
-          // Flatten Pydantic validation errors
-          setError(detail.map((e: any) => `${e.loc[e.loc.length - 1]}: ${e.msg}`).join(', '));
-        } else {
-          setError(detail);
-        }
-      } else {
-        setError('Failed to register hospital.');
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleRegisterDoctor = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!selectedHospitalId) {
-      setError("Please select a hospital first.");
-      return;
-    }
-    setError(''); setMessage(''); setIsLoading(true);
-    
-    // Auto-generate Standard 9AM-5PM blocks for weekdays
-    const weekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
-    const standardSlots = ["09:00", "10:00", "11:00", "13:00", "14:00", "15:00", "16:00"];
-    const defaultAvailability: Record<string, string[]> = {};
-    for (const day of weekdays) {
-      defaultAvailability[day] = [...standardSlots];
-    }
-
-    try {
-      await adminRegisterDoctor({
-        ...doctorForm,
-        hospital_id: typeof selectedHospitalId === 'string' ? parseInt(selectedHospitalId) : selectedHospitalId,
-        admin_email: adminEmail,
-        admin_password: adminPassword,
-        availability: defaultAvailability
-      });
-      setMessage('Doctor registered successfully.');
-      setDoctorForm({ name: '', specialization: '', contact: '', username: '', password: '' });
-      
-      const res = await getDoctorsByHospital(typeof selectedHospitalId === 'string' ? parseInt(selectedHospitalId) : selectedHospitalId);
-      setAdminDoctors(res.doctors);
-    } catch (err: any) {
-      if (err?.response?.data?.detail) {
-        const detail = err.response.data.detail;
-        if (Array.isArray(detail)) {
-          setError(detail.map((e: any) => `${e.loc[e.loc.length - 1]}: ${e.msg}`).join(', '));
-        } else {
-          setError(detail);
-        }
-      } else {
-        setError('Failed to register doctor.');
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   // --- LOGIN VIEW ---
   if (!authenticated) {
@@ -738,75 +645,6 @@ export default function AdminPage() {
         </div>
       </section>
 
-      {/* Admin Doctor Registration & View */}
-      <section className="bg-gray-900/60 border border-gray-700 rounded-2xl p-4">
-        <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
-          <Stethoscope size={18} />
-          Register Doctor
-        </h3>
-        
-        <div className="mb-4">
-          <label className="block text-sm text-gray-400 mb-1">Select Hospital</label>
-          <select 
-            className="w-full md:w-1/2 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
-            value={selectedHospitalId}
-            onChange={(e) => setSelectedHospitalId(e.target.value ? parseInt(e.target.value) : '')}
-          >
-            <option value="">-- Choose a Hospital --</option>
-            {hospitals.map(h => (
-              <option key={h.id} value={h.id}>{h.name} (City: {h.city})</option>
-            ))}
-          </select>
-        </div>
-
-        {selectedHospitalId && (
-          <form className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3 mb-6" onSubmit={handleRegisterDoctor}>
-            <input className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white" placeholder="Dr. XYZ (Name)" value={doctorForm.name} onChange={(e) => setDoctorForm({...doctorForm, name: e.target.value})} required />
-            <input className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white" placeholder="Specialization (e.g. Virologist)" value={doctorForm.specialization} onChange={(e) => setDoctorForm({...doctorForm, specialization: e.target.value})} required />
-            <input className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white" placeholder="Contact Details" value={doctorForm.contact} onChange={(e) => setDoctorForm({...doctorForm, contact: e.target.value})} required />
-            <input className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white" placeholder="Doctor Username" value={doctorForm.username} onChange={(e) => setDoctorForm({...doctorForm, username: e.target.value})} required />
-            <input className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white" placeholder="Doctor Password" type="password" minLength={6} value={doctorForm.password} onChange={(e) => setDoctorForm({...doctorForm, password: e.target.value})} required />
-            <button disabled={isLoading} className="lg:col-span-5 bg-indigo-600 hover:bg-indigo-500 rounded-lg font-medium disabled:opacity-60 text-white py-2 flex items-center justify-center gap-2 cursor-pointer transition-colors">
-              <PlusCircle size={18} />
-              Register Doctor (Standard 9-5 Schedule)
-            </button>
-          </form>
-        )}
-
-        {selectedHospitalId && (
-          <>
-            <h4 className="text-md font-semibold text-gray-300 mb-2">Registered Doctors at Selected Hospital</h4>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm min-w-[700px]">
-                <thead>
-                  <tr className="border-b border-gray-700 text-left text-gray-400">
-                    <th className="py-2">Name</th>
-                    <th className="py-2">Specialization</th>
-                    <th className="py-2">Contact</th>
-                    <th className="py-2">System Username</th>
-                    <th className="py-2">Registered On</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {adminDoctors.map((d) => (
-                    <tr key={d.id} className="border-b border-gray-800 text-gray-200">
-                      <td className="py-2 font-medium">{d.name}</td>
-                      <td className="py-2">{d.specialization}</td>
-                      <td className="py-2">{d.contact}</td>
-                      <td className="py-2">{d.username}</td>
-                      <td className="py-2">{new Date(d.created_at).toLocaleDateString()}</td>
-                    </tr>
-                  ))}
-                  {adminDoctors.length === 0 && (
-                    <tr>
-                      <td colSpan={5} className="py-4 text-center text-gray-500">No doctors registered here yet.</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </>
-        )}
       </section>
     </div>
   );
