@@ -296,6 +296,34 @@ export default function AdminPage() {
   };
 
   const handleRegisterHospital = async (e: FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setMessage('');
+    setIsLoading(true);
+    try {
+      await registerHospital({
+        name: hospitalForm.name,
+        address: hospitalForm.address,
+        city: hospitalForm.city,
+        contact: hospitalForm.contact,
+        latitude: parseFloat(hospitalForm.latitude),
+        longitude: parseFloat(hospitalForm.longitude),
+        manager_username: hospitalForm.manager_username,
+        manager_password: hospitalForm.manager_password,
+        admin_email: adminEmail,
+        admin_password: adminPassword,
+      });
+      setMessage('Hospital registered successfully.');
+      setHospitalForm({
+        name: '', address: '', city: '', contact: '', latitude: '', longitude: '', manager_username: '', manager_password: ''
+      });
+      await refresh();
+    } catch {
+      setError('Failed to register hospital.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   // --- LOGIN VIEW ---
   if (!authenticated) {
@@ -643,8 +671,6 @@ export default function AdminPage() {
             </tbody>
           </table>
         </div>
-      </section>
-
       </section>
     </div>
   );
